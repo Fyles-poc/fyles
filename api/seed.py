@@ -1,10 +1,15 @@
 """
-Script de peuplement de la base MongoDB avec les données de démonstration.
+Script de peuplement de la base MongoDB + upload des fichiers dans MinIO.
 Usage : poetry run python -m api.seed
 """
 
 import asyncio
+import mimetypes
+import time
 from datetime import datetime
+from pathlib import Path
+
+from minio import Minio
 from motor.motor_asyncio import AsyncIOMotorClient
 from beanie import init_beanie
 
@@ -16,278 +21,317 @@ from api.models.dossier import (
 from api.models.workflow import Workflow, WorkflowDocument, WorkflowValidation, WorkflowNode, AIConfig
 from api.models.user import User, UserRole
 from api.models.organization import Organization
+from api.storage import get_minio_client, ensure_bucket
+
+DATA_DIR = Path(__file__).parent.parent / "data"
+
+# ── Mapping dossier par email ────────────────────────────────────────────────
+
+DOSSIERS_META = [
+    {
+        "folder": "tisseo.aam.test@yopmail.com",
+        "reference": "DOS-2026-00001",
+        "nom": "Harkfell", "prenom": "Jean",
+        "email": "tisseo.aam.test@yopmail.com",
+        "type": "Tarif préférentiel",
+        "workflow": "tarif",
+        "statut": DossierStatus.en_cours,
+        "confiance_ia": 72,
+        "instructeur": "Dupont M.",
+    },
+    {
+        "folder": "dom.thomas@orange.fr",
+        "reference": "DOS-2026-00002",
+        "nom": "Thomas", "prenom": "Dom",
+        "email": "dom.thomas@orange.fr",
+        "type": "Tarif préférentiel",
+        "workflow": "tarif",
+        "statut": DossierStatus.en_attente,
+        "confiance_ia": 58,
+        "instructeur": "Leroy A.",
+    },
+    {
+        "folder": "toisonthierry@gmail.com",
+        "reference": "DOS-2026-00003",
+        "nom": "Toison", "prenom": "Thierry",
+        "email": "toisonthierry@gmail.com",
+        "type": "Tarif préférentiel",
+        "workflow": "tarif",
+        "statut": DossierStatus.approuve,
+        "confiance_ia": 91,
+        "instructeur": "Dupont M.",
+    },
+    {
+        "folder": "emma31lucio@yahoo.com",
+        "reference": "DOS-2026-00004",
+        "nom": "Lucio", "prenom": "Emma",
+        "email": "emma31lucio@yahoo.com",
+        "type": "Tarif préférentiel",
+        "workflow": "tarif",
+        "statut": DossierStatus.en_cours,
+        "confiance_ia": 65,
+        "instructeur": None,
+    },
+    {
+        "folder": "hamrat.haidi@outlook.fr",
+        "reference": "DOS-2026-00005",
+        "nom": "Hamrat", "prenom": "Haidi",
+        "email": "hamrat.haidi@outlook.fr",
+        "type": "Aide logement",
+        "workflow": "logement",
+        "statut": DossierStatus.signale,
+        "confiance_ia": 41,
+        "instructeur": "Leroy A.",
+    },
+    {
+        "folder": "eglantine1331@gmail.com",
+        "reference": "DOS-2026-00006",
+        "nom": "Durand", "prenom": "Eglantine",
+        "email": "eglantine1331@gmail.com",
+        "type": "Tarif préférentiel",
+        "workflow": "tarif",
+        "statut": DossierStatus.refuse,
+        "confiance_ia": 85,
+        "instructeur": "Dupont M.",
+    },
+    {
+        "folder": "paololautaro@gmail.com",
+        "reference": "DOS-2026-00007",
+        "nom": "Lautaro", "prenom": "Paolo",
+        "email": "paololautaro@gmail.com",
+        "type": "Aide logement",
+        "workflow": "logement",
+        "statut": DossierStatus.en_cours,
+        "confiance_ia": 53,
+        "instructeur": None,
+    },
+]
+
+
+def classify_file(filename: str) -> tuple[str, str, bool]:
+    """Returns (doc_type, nom_affiche, obligatoire)."""
+    stem = Path(filename).stem.lower()
+    if stem.startswith("demande_"):
+        return "formulaire_demande", "Formulaire de demande", True
+    if "cni" in stem:
+        return "piece_identite", "Pièce d'identité (CNI)", True
+    if "photo" in stem:
+        return "photo_identite", "Photo d'identité", False
+    if "psh" in stem:
+        return "justificatif_psh", "Justificatif PSH", True
+    if stem.endswith("_da"):
+        return "demande_aide", "Demande d'aide complémentaire", True
+    if "ame" in stem:
+        return "attestation_ame", "Attestation AME", True
+    return "document", filename, False
+
+
+def format_size(path: Path) -> str:
+    size = path.stat().st_size
+    if size < 1024:
+        return f"{size} o"
+    if size < 1024 * 1024:
+        return f"{size // 1024} Ko"
+    return f"{size / (1024 * 1024):.1f} Mo"
+
+
+def wait_for_minio(mc: Minio, retries: int = 15) -> None:
+    for i in range(retries):
+        try:
+            mc.list_buckets()
+            return
+        except Exception:
+            print(f"   MinIO pas encore prêt, attente... ({i + 1}/{retries})")
+            time.sleep(2)
+    raise RuntimeError("MinIO inaccessible après plusieurs tentatives")
+
+
+def upload_dossier_files(
+    mc: Minio,
+    bucket: str,
+    meta: dict,
+) -> list[DocumentItem]:
+    """Upload les fichiers d'un dossier dans MinIO, retourne les DocumentItems."""
+    folder_path = DATA_DIR / meta["folder"]
+    if not folder_path.exists():
+        return []
+
+    items: list[DocumentItem] = []
+    for i, file_path in enumerate(sorted(folder_path.iterdir())):
+        if not file_path.is_file() or file_path.name.startswith("."):
+            continue
+
+        content_type, _ = mimetypes.guess_type(file_path.name)
+        content_type = content_type or "application/octet-stream"
+
+        minio_key = f"dossiers/{meta['reference']}/{file_path.name}"
+        mc.fput_object(bucket, minio_key, str(file_path), content_type=content_type)
+
+        doc_type, nom, obligatoire = classify_file(file_path.name)
+        statut = DocumentStatus.valide if doc_type != "document" else DocumentStatus.en_attente
+
+        items.append(DocumentItem(
+            id=f"doc-{meta['reference']}-{i}",
+            nom=nom,
+            type=doc_type,
+            statut=statut,
+            obligatoire=obligatoire,
+            uploaded_at=datetime.utcnow().strftime("%Y-%m-%d"),
+            file_size=format_size(file_path),
+            minio_key=minio_key,
+            content_type=content_type,
+        ))
+        print(f"      ↑ {file_path.name} → {minio_key}")
+
+    return items
 
 
 async def seed():
     cfg = get_settings()
+
+    # ── MinIO ──────────────────────────────────────────────────────────────────
+    print("🗄  Connexion à MinIO...")
+    mc = get_minio_client(cfg)
+    wait_for_minio(mc)
+    ensure_bucket(mc, cfg.minio_bucket)
+    print(f"   Bucket « {cfg.minio_bucket} » prêt.")
+
+    # ── MongoDB ────────────────────────────────────────────────────────────────
+    print("🍃 Connexion à MongoDB...")
     client = AsyncIOMotorClient(cfg.mongodb_url)
     await init_beanie(
         database=client[cfg.mongodb_db],
         document_models=[Dossier, Workflow, User, Organization],
     )
 
-    print("Nettoyage des collections existantes...")
+    print("🧹 Nettoyage des collections existantes...")
     await Dossier.delete_all()
     await Workflow.delete_all()
     await User.delete_all()
     await Organization.delete_all()
 
-    # ── Dossiers ─────────────────────────────────────────────────────────────
-    print("Insertion des dossiers...")
-    dossiers = [
-        Dossier(
-            reference="DOS-2026-00127",
-            demandeur=Demandeur(nom="Martin", prenom="Sophie", email="sophie.martin@email.fr"),
-            type="Tarif préférentiel", workflow_id="wf-1",
-            statut=DossierStatus.en_cours, confiance_ia=67,
-            derniere_maj=datetime(2026, 2, 28, 10, 30), instructeur="Dupont M.",
-            created_at=datetime(2026, 2, 25, 9, 0),
-            documents=[
-                DocumentItem(id="d1", nom="Formulaire de demande", type="formulaire_demande",
-                             statut=DocumentStatus.valide, obligatoire=True,
-                             uploaded_at="2026-02-25", file_size="245 Ko",
-                             validation_message="Tous les champs obligatoires sont remplis"),
-                DocumentItem(id="d2", nom="Pièce d'identité", type="piece_identite",
-                             statut=DocumentStatus.valide, obligatoire=True,
-                             uploaded_at="2026-02-25", file_size="1.2 Mo",
-                             validation_message="CNI valide détectée"),
-                DocumentItem(id="d3", nom="Justificatif de domicile", type="justificatif_domicile",
-                             statut=DocumentStatus.invalide, obligatoire=True,
-                             uploaded_at="2026-02-25", file_size="890 Ko",
-                             validation_message="Document daté de plus de 3 mois"),
-                DocumentItem(id="d4", nom="Avis d'imposition", type="avis_imposition",
-                             statut=DocumentStatus.valide, obligatoire=True,
-                             uploaded_at="2026-02-26", file_size="1.8 Mo",
-                             validation_message="Avis 2025 validé"),
-                DocumentItem(id="d5", nom="RIB", type="rib",
-                             statut=DocumentStatus.manquant, obligatoire=False,
-                             validation_message="Document non fourni"),
-            ],
-            analysis_results=[
-                AIAnalysisResult(id="a1", label="Complétude documentaire", statut="warning",
-                                 message="4/5 documents fournis",
-                                 details=["RIB manquant (optionnel)", "Justificatif de domicile invalide"]),
-                AIAnalysisResult(id="a2", label="Correspondance identité", statut="ok",
-                                 message="Identité cohérente entre les documents",
-                                 details=["Nom et prénom identiques sur formulaire et CNI"]),
-                AIAnalysisResult(id="a3", label="Validité de l'avis d'imposition", statut="ok",
-                                 message="Revenu fiscal de référence : 18 240 €",
-                                 details=["Plafond éligibilité : 22 000 €", "Condition revenus : VALIDÉE"]),
-                AIAnalysisResult(id="a4", label="Règle domicile", statut="error",
-                                 message="Justificatif de domicile refusé",
-                                 details=["Date du document : 15/10/2025", "Délai maximum : 3 mois", "Document expiré"]),
-            ],
-            recommendation=AIRecommendation(
-                decision=RecommendationDecision.complement, confidence=67,
-                motif="Le dossier présente des conditions de revenus favorables mais contient un point bloquant sur le justificatif de domicile.",
-                points_bloquants=["Justificatif de domicile daté de plus de 3 mois (15/10/2025)"],
-                points_attention=["RIB non fourni (document optionnel)",
-                                  "Vérifier la cohérence de l'adresse entre les documents"],
+    # ── Workflows ──────────────────────────────────────────────────────────────
+    print("📋 Insertion des workflows...")
+    wf_tarif = Workflow(
+        nom="Instruction — demande de tarif préférentiel",
+        description="Workflow d'instruction pour les demandes de tarif préférentiel énergie",
+        type="Tarif préférentiel", dossiers_count=127,
+        created_at=datetime(2026, 1, 15, 10, 0),
+        updated_at=datetime(2026, 2, 20, 14, 30),
+        ai_config=AIConfig(
+            model="claude-sonnet-4-6", temperature=0.1, seuil_confiance_auto=90,
+            prompt_systeme=(
+                "Tu es un expert en instruction de dossiers administratifs. "
+                "Analyse les documents fournis et vérifie leur conformité aux règles définies."
             ),
         ),
-        Dossier(
-            reference="DOS-2026-00126",
-            demandeur=Demandeur(nom="Bernard", prenom="Lucas", email="lucas.bernard@email.fr"),
-            type="Tarif préférentiel", workflow_id="wf-1",
-            statut=DossierStatus.approuve, confiance_ia=94,
-            derniere_maj=datetime(2026, 2, 27, 14, 15), instructeur="Leroy A.",
-            created_at=datetime(2026, 2, 24, 11, 0),
-            documents=[
-                DocumentItem(id="d6", nom="Formulaire de demande", type="formulaire_demande",
-                             statut=DocumentStatus.valide, obligatoire=True,
-                             uploaded_at="2026-02-24", file_size="198 Ko"),
-                DocumentItem(id="d7", nom="Pièce d'identité", type="piece_identite",
-                             statut=DocumentStatus.valide, obligatoire=True,
-                             uploaded_at="2026-02-24", file_size="980 Ko"),
-                DocumentItem(id="d8", nom="Justificatif de domicile", type="justificatif_domicile",
-                             statut=DocumentStatus.valide, obligatoire=True,
-                             uploaded_at="2026-02-24", file_size="750 Ko"),
-                DocumentItem(id="d9", nom="Avis d'imposition", type="avis_imposition",
-                             statut=DocumentStatus.valide, obligatoire=True,
-                             uploaded_at="2026-02-24", file_size="2.1 Mo"),
-            ],
-            analysis_results=[
-                AIAnalysisResult(id="a5", label="Complétude documentaire", statut="ok",
-                                 message="4/4 documents fournis et valides"),
-                AIAnalysisResult(id="a6", label="Correspondance identité", statut="ok",
-                                 message="Identité validée"),
-                AIAnalysisResult(id="a7", label="Validité de l'avis d'imposition", statut="ok",
-                                 message="Revenu fiscal de référence : 15 800 €",
-                                 details=["Condition revenus : VALIDÉE"]),
-            ],
-            recommendation=AIRecommendation(
-                decision=RecommendationDecision.approuver, confidence=94,
-                motif="Dossier complet et conforme à toutes les règles.",
-                points_bloquants=[], points_attention=[],
+        documents=[
+            WorkflowDocument(
+                id="doc-1", nom="Formulaire de demande",
+                description="Formulaire officiel de demande de tarif préférentiel rempli et signé",
+                statut="OBLIGATOIRE",
+                validations=[
+                    WorkflowValidation(id="v1", type="required_fields", label="Champs obligatoires",
+                                       prompt="Vérifie que le formulaire contient nom, prénom, date de naissance, adresse, téléphone"),
+                    WorkflowValidation(id="v2", type="llm_check", label="Cohérence des informations",
+                                       prompt="Vérifie la cohérence globale des informations saisies"),
+                ],
             ),
-        ),
-        Dossier(
-            reference="DOS-2026-00125",
-            demandeur=Demandeur(nom="Petit", prenom="Marie", email="marie.petit@email.fr"),
-            type="Aide logement", workflow_id="wf-2",
-            statut=DossierStatus.en_attente, confiance_ia=45,
-            derniere_maj=datetime(2026, 2, 26, 16, 45), instructeur=None,
-            created_at=datetime(2026, 2, 23, 8, 30),
-            documents=[
-                DocumentItem(id="d10", nom="Formulaire de demande", type="formulaire_demande",
-                             statut=DocumentStatus.invalide, obligatoire=True,
-                             uploaded_at="2026-02-23", file_size="312 Ko",
-                             validation_message="Champs obligatoires manquants : téléphone, adresse"),
-                DocumentItem(id="d11", nom="Pièce d'identité", type="piece_identite",
-                             statut=DocumentStatus.valide, obligatoire=True,
-                             uploaded_at="2026-02-23", file_size="1.4 Mo"),
-                DocumentItem(id="d12", nom="Justificatif de domicile", type="justificatif_domicile",
-                             statut=DocumentStatus.manquant, obligatoire=True),
-                DocumentItem(id="d13", nom="Avis d'imposition", type="avis_imposition",
-                             statut=DocumentStatus.manquant, obligatoire=True),
-            ],
-            analysis_results=[
-                AIAnalysisResult(id="a8", label="Complétude documentaire", statut="error",
-                                 message="2/4 documents valides",
-                                 details=["Formulaire incomplet", "Justificatif de domicile manquant",
-                                          "Avis d'imposition manquant"]),
-            ],
-            recommendation=AIRecommendation(
-                decision=RecommendationDecision.complement, confidence=45,
-                motif="Dossier incomplet, pièces manquantes.",
-                points_bloquants=["Formulaire incomplet", "Documents manquants"],
-                points_attention=[],
+            WorkflowDocument(
+                id="doc-2", nom="Pièce d'identité",
+                description="CNI ou passeport en cours de validité", statut="OBLIGATOIRE",
+                validations=[
+                    WorkflowValidation(id="v3", type="doc_type", label="Type de document",
+                                       prompt="Vérifie que le document est une CNI ou un passeport"),
+                    WorkflowValidation(id="v4", type="llm_check", label="Validité",
+                                       prompt="Vérifie que la pièce d'identité est en cours de validité"),
+                ],
             ),
-        ),
-        Dossier(
-            reference="DOS-2026-00124",
-            demandeur=Demandeur(nom="Durand", prenom="Thomas", email="thomas.durand@email.fr"),
-            type="Tarif préférentiel", workflow_id="wf-1",
-            statut=DossierStatus.refuse, confiance_ia=88,
-            derniere_maj=datetime(2026, 2, 25, 11, 20), instructeur="Dupont M.",
-            created_at=datetime(2026, 2, 22, 10, 0),
-            documents=[],
-            analysis_results=[
-                AIAnalysisResult(id="a9", label="Validité de l'avis d'imposition", statut="error",
-                                 message="Revenu fiscal de référence : 35 200 € — dépasse le plafond",
-                                 details=["Plafond éligibilité : 22 000 €", "Condition revenus : REFUSÉE"]),
-            ],
-            recommendation=AIRecommendation(
-                decision=RecommendationDecision.refuser, confidence=88,
-                motif="Revenus supérieurs au plafond d'éligibilité.",
-                points_bloquants=["Revenus (35 200 €) > plafond (22 000 €)"],
-                points_attention=[],
+            WorkflowDocument(
+                id="doc-3", nom="Justificatif de domicile",
+                description="Justificatif de domicile de moins de 3 mois", statut="OBLIGATOIRE",
+                validations=[
+                    WorkflowValidation(id="v5", type="llm_check", label="Date du document",
+                                       prompt="Vérifie que le justificatif date de moins de 3 mois"),
+                ],
             ),
-        ),
-        Dossier(
-            reference="DOS-2026-00123",
-            demandeur=Demandeur(nom="Leroy", prenom="Emma", email="emma.leroy@email.fr"),
-            type="Aide logement", workflow_id="wf-2",
-            statut=DossierStatus.signale, confiance_ia=38,
-            derniere_maj=datetime(2026, 2, 24, 9, 5), instructeur="Leroy A.",
-            created_at=datetime(2026, 2, 21, 14, 0),
-            documents=[], analysis_results=[],
-            recommendation=AIRecommendation(
-                decision=RecommendationDecision.complement, confidence=38,
-                motif="Incohérences détectées dans le dossier.",
-                points_bloquants=["Adresse différente entre CNI et justificatif de domicile"],
-                points_attention=[],
+            WorkflowDocument(
+                id="doc-4", nom="Avis d'imposition",
+                description="Avis d'imposition sur les revenus N-1", statut="OBLIGATOIRE",
+                validations=[
+                    WorkflowValidation(id="v7", type="llm_check", label="Plafond de revenus",
+                                       prompt="Vérifie que le revenu fiscal de référence est inférieur au plafond de 22 000 €"),
+                ],
             ),
+        ],
+        nodes=[
+            WorkflowNode(id="n1", type="document_check", label="Vérification complétude", next="n2"),
+            WorkflowNode(id="n2", type="identity_match", label="Correspondance identité", next="n3"),
+            WorkflowNode(id="n3", type="condition", label="Revenus ≤ plafond ?",
+                         next=[{"condition": "oui", "node": "n4"}, {"condition": "non", "node": "n5"}]),
+            WorkflowNode(id="n4", type="decision", label="Recommander approbation"),
+            WorkflowNode(id="n5", type="decision", label="Recommander refus"),
+        ],
+    )
+    wf_logement = Workflow(
+        nom="Instruction — demande d'aide au logement",
+        description="Workflow d'instruction pour les demandes d'aide au logement social",
+        type="Aide logement", dossiers_count=43,
+        created_at=datetime(2026, 1, 20, 9, 0),
+        updated_at=datetime(2026, 2, 15, 11, 0),
+        ai_config=AIConfig(
+            model="claude-sonnet-4-6", temperature=0.1, seuil_confiance_auto=85,
+            prompt_systeme="Tu es un expert en aides sociales au logement.",
         ),
-    ]
-    for d in dossiers:
-        await d.insert()
-    print(f"   {len(dossiers)} dossiers insérés.")
+        documents=[], nodes=[],
+    )
+    await wf_tarif.insert()
+    await wf_logement.insert()
+    wf_ids = {"tarif": str(wf_tarif.id), "logement": str(wf_logement.id)}
+    print(f"   2 workflows insérés.")
 
-    # ── Workflows ─────────────────────────────────────────────────────────────
-    print("Insertion des workflows...")
-    workflows = [
-        Workflow(
-            nom="Instruction — demande de tarif préférentiel",
-            description="Workflow d'instruction pour les demandes de tarif préférentiel énergie",
-            type="Tarif préférentiel", dossiers_count=127,
-            created_at=datetime(2026, 1, 15, 10, 0),
-            updated_at=datetime(2026, 2, 20, 14, 30),
-            ai_config=AIConfig(
-                model="claude-sonnet-4-6", temperature=0.1, seuil_confiance_auto=90,
-                prompt_systeme=(
-                    "Tu es un expert en instruction de dossiers administratifs. "
-                    "Analyse les documents fournis et vérifie leur conformité aux règles définies."
-                ),
-            ),
-            documents=[
-                WorkflowDocument(
-                    id="doc-1", nom="Formulaire de demande",
-                    description="Formulaire officiel de demande de tarif préférentiel rempli et signé",
-                    statut="OBLIGATOIRE",
-                    validations=[
-                        WorkflowValidation(id="v1", type="required_fields", label="Champs obligatoires",
-                                           prompt="Vérifie que le formulaire contient nom, prénom, date de naissance, adresse, téléphone"),
-                        WorkflowValidation(id="v2", type="llm_check", label="Cohérence des informations",
-                                           prompt="Vérifie la cohérence globale des informations saisies"),
-                    ],
-                ),
-                WorkflowDocument(
-                    id="doc-2", nom="Pièce d'identité",
-                    description="CNI ou passeport en cours de validité", statut="OBLIGATOIRE",
-                    validations=[
-                        WorkflowValidation(id="v3", type="doc_type", label="Type de document",
-                                           prompt="Vérifie que le document est une CNI ou un passeport"),
-                        WorkflowValidation(id="v4", type="llm_check", label="Validité",
-                                           prompt="Vérifie que la pièce d'identité est en cours de validité"),
-                    ],
-                ),
-                WorkflowDocument(
-                    id="doc-3", nom="Justificatif de domicile",
-                    description="Justificatif de domicile de moins de 3 mois", statut="OBLIGATOIRE",
-                    validations=[
-                        WorkflowValidation(id="v5", type="llm_check", label="Date du document",
-                                           prompt="Vérifie que le justificatif date de moins de 3 mois"),
-                        WorkflowValidation(id="v6", type="llm_check", label="Cohérence adresse",
-                                           prompt="Vérifie que l'adresse correspond à celle du formulaire"),
-                    ],
-                ),
-                WorkflowDocument(
-                    id="doc-4", nom="Avis d'imposition",
-                    description="Avis d'imposition sur les revenus N-1", statut="OBLIGATOIRE",
-                    validations=[
-                        WorkflowValidation(id="v7", type="llm_check", label="Plafond de revenus",
-                                           prompt="Vérifie que le revenu fiscal de référence est inférieur au plafond de 22 000 €"),
-                        WorkflowValidation(id="v8", type="llm_check", label="Année de référence",
-                                           prompt="Vérifie que l'avis d'imposition est bien celui de l'année N-1"),
-                    ],
-                ),
-                WorkflowDocument(
-                    id="doc-5", nom="RIB", description="Relevé d'identité bancaire", statut="OPTIONNEL",
-                    validations=[
-                        WorkflowValidation(id="v9", type="llm_check", label="Format RIB",
-                                           prompt="Vérifie que le document est un RIB valide avec IBAN"),
-                    ],
-                ),
-            ],
-            nodes=[
-                WorkflowNode(id="n1", type="document_check", label="Vérification complétude", next="n2"),
-                WorkflowNode(id="n2", type="identity_match", label="Correspondance identité", next="n3"),
-                WorkflowNode(id="n3", type="condition", label="Revenus ≤ plafond ?",
-                             next=[{"condition": "oui", "node": "n4"}, {"condition": "non", "node": "n5"}]),
-                WorkflowNode(id="n4", type="decision", label="Recommander approbation"),
-                WorkflowNode(id="n5", type="decision", label="Recommander refus"),
-            ],
-        ),
-        Workflow(
-            nom="Instruction — demande d'aide au logement",
-            description="Workflow d'instruction pour les demandes d'aide au logement social",
-            type="Aide logement", dossiers_count=43,
-            created_at=datetime(2026, 1, 20, 9, 0),
-            updated_at=datetime(2026, 2, 15, 11, 0),
-            ai_config=AIConfig(
-                model="claude-sonnet-4-6", temperature=0.1, seuil_confiance_auto=85,
-                prompt_systeme="Tu es un expert en aides sociales au logement.",
-            ),
-            documents=[], nodes=[],
-        ),
-    ]
-    for w in workflows:
-        await w.insert()
-    print(f"   {len(workflows)} workflows insérés.")
+    # ── Dossiers + upload MinIO ────────────────────────────────────────────────
+    print("📁 Upload des fichiers et insertion des dossiers...")
+    for meta in DOSSIERS_META:
+        print(f"   {meta['reference']} — {meta['prenom']} {meta['nom']}")
+        docs = upload_dossier_files(mc, cfg.minio_bucket, meta)
 
-    # ── Users ─────────────────────────────────────────────────────────────────
-    print("Insertion des utilisateurs...")
+        dossier = Dossier(
+            reference=meta["reference"],
+            demandeur=Demandeur(nom=meta["nom"], prenom=meta["prenom"], email=meta["email"]),
+            type=meta["type"],
+            workflow_id=wf_ids[meta["workflow"]],
+            statut=meta["statut"],
+            confiance_ia=meta["confiance_ia"],
+            derniere_maj=datetime.utcnow(),
+            instructeur=meta["instructeur"],
+            documents=docs,
+            analysis_results=[
+                AIAnalysisResult(
+                    id=f"a-{meta['reference']}-1",
+                    label="Complétude documentaire",
+                    statut="ok" if len(docs) >= 2 else "warning",
+                    message=f"{len(docs)} document(s) fourni(s)",
+                    details=[f"• {d.nom} ({d.statut.value})" for d in docs],
+                )
+            ],
+            recommendation=AIRecommendation(
+                decision=RecommendationDecision.approuver if meta["confiance_ia"] >= 80
+                    else RecommendationDecision.complement if meta["confiance_ia"] >= 50
+                    else RecommendationDecision.refuser,
+                confidence=meta["confiance_ia"],
+                motif="Analyse automatique basée sur les documents fournis.",
+                points_bloquants=[],
+                points_attention=[],
+            ),
+            created_at=datetime.utcnow(),
+        )
+        await dossier.insert()
+
+    print(f"   {len(DOSSIERS_META)} dossiers insérés.")
+
+    # ── Users ──────────────────────────────────────────────────────────────────
+    print("👤 Insertion des utilisateurs...")
     users = [
         User(nom="Dupont", prenom="Marc", email="marc.dupont@organisation.fr",
              role=UserRole.instructeur, actif=True),
@@ -302,8 +346,8 @@ async def seed():
         await u.insert()
     print(f"   {len(users)} utilisateurs insérés.")
 
-    # ── Organisation ─────────────────────────────────────────────────────────
-    print("Insertion de l'organisation...")
+    # ── Organisation ───────────────────────────────────────────────────────────
+    print("🏢 Insertion de l'organisation...")
     await Organization(
         nom="Office Municipal de l'Énergie",
         siret="12345678900012",
@@ -312,7 +356,7 @@ async def seed():
         telephone="05 61 00 00 00",
     ).insert()
 
-    print("Base de données peuplée avec succès !")
+    print("✅ Base de données et stockage peuplés avec succès !")
     client.close()
 
 
