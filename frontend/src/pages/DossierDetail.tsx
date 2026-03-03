@@ -2,92 +2,137 @@ import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, CheckCircle, XCircle, Clock,
-  AlertTriangle, ChevronDown, ChevronUp, ThumbsUp, ThumbsDown,
-  MessageSquare, Download, Upload, Eye, X,
+  AlertTriangle, ThumbsUp, ThumbsDown,
+  MessageSquare, Download, Eye, X,
+  ClipboardList, ExternalLink, FileText, Image, File,
+  Sparkles, ShieldAlert, ChevronDown, ChevronUp,
+  CheckSquare,
 } from 'lucide-react';
 import { api } from '../lib/api';
 import { useApi } from '../lib/useApi';
 import { LoadingSpinner, ErrorMessage } from '../components/ui/LoadingSpinner';
 import { StatusBadge } from '../components/ui/Badge';
-import type { DocumentItem, AIAnalysisResult, RecommendationDecision } from '../lib/api';
+import type { DocumentItem, RecommendationDecision } from '../lib/api';
 
-function DocumentIcon({ status }: { status: DocumentItem['statut'] }) {
-  if (status === 'valide') return <CheckCircle size={16} className="text-emerald-500 flex-shrink-0" />;
-  if (status === 'invalide') return <XCircle size={16} className="text-red-500 flex-shrink-0" />;
-  if (status === 'manquant') return <Clock size={16} className="text-slate-300 flex-shrink-0" />;
-  return <Clock size={16} className="text-amber-400 flex-shrink-0" />;
+// ── File tree icon ─────────────────────────────────────────────────────────
+
+function FileIcon({ contentType }: { contentType?: string }) {
+  if (!contentType) return <File size={14} className="text-slate-400" />;
+  if (contentType.startsWith('image/')) return <Image size={14} className="text-blue-400" />;
+  if (contentType === 'application/pdf') return <FileText size={14} className="text-red-400" />;
+  return <File size={14} className="text-slate-400" />;
 }
 
-function AnalysisRow({ result }: { result: AIAnalysisResult }) {
-  const [open, setOpen] = useState(false);
-  const colors = {
-    ok: { badge: 'bg-emerald-100 text-emerald-700', icon: CheckCircle, iconColor: 'text-emerald-500' },
-    warning: { badge: 'bg-amber-100 text-amber-700', icon: AlertTriangle, iconColor: 'text-amber-500' },
-    error: { badge: 'bg-red-100 text-red-700', icon: XCircle, iconColor: 'text-red-500' },
-  };
-  const cfg = colors[result.statut as keyof typeof colors] ?? colors.ok;
-  const Icon = cfg.icon;
+function DocStatusDot({ status }: { status: DocumentItem['statut'] }) {
+  if (status === 'valide') return <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 flex-shrink-0" />;
+  if (status === 'invalide') return <span className="w-1.5 h-1.5 rounded-full bg-red-500 flex-shrink-0" />;
+  if (status === 'manquant') return <span className="w-1.5 h-1.5 rounded-full bg-slate-300 flex-shrink-0" />;
+  return <span className="w-1.5 h-1.5 rounded-full bg-amber-400 flex-shrink-0" />;
+}
+
+// ── Instruction question card (center) ────────────────────────────────────
+
+function InstructionCard({
+  index,
+  label,
+  answer,
+  status,
+  reasoning,
+  isEligibilityKO,
+  sources,
+}: {
+  index: number;
+  label: string;
+  answer: string;
+  status: 'ok' | 'warning' | 'error';
+  reasoning: string[];
+  isEligibilityKO: boolean;
+  sources: string[];
+}) {
+  const [reasoningOpen, setReasoningOpen] = useState(true);
 
   return (
-    <div className="border border-slate-100 rounded-lg overflow-hidden">
-      <button
-        className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-50 transition-colors text-left"
-        onClick={() => result.details?.length && setOpen(!open)}
-      >
-        <Icon size={16} className={cfg.iconColor} />
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium text-slate-800">{result.label}</p>
-          <p className="text-xs text-slate-500 mt-0.5">{result.message}</p>
-        </div>
-        <span className={`text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0 ${cfg.badge}`}>
-          {result.statut === 'ok' ? 'OK' : result.statut === 'warning' ? 'Attention' : 'Erreur'}
-        </span>
-        {result.details?.length > 0 && (
-          open ? <ChevronUp size={14} className="text-slate-400" /> : <ChevronDown size={14} className="text-slate-400" />
-        )}
-      </button>
-      {open && result.details && (
-        <div className="px-4 pb-3 pt-0 border-t border-slate-100 bg-slate-50">
-          <ul className="space-y-1 mt-2">
-            {result.details.map((d, i) => (
-              <li key={i} className="flex items-start gap-2 text-xs text-slate-600">
-                <span className="text-slate-400 mt-0.5">•</span>{d}
-              </li>
-            ))}
-          </ul>
+    <div className={`bg-white border rounded-xl overflow-hidden mb-4 ${
+      isEligibilityKO ? 'border-red-200' : 'border-slate-200'
+    }`}>
+      {isEligibilityKO && (
+        <div className="bg-red-50 border-b border-red-100 px-4 py-2 flex items-center gap-2">
+          <ShieldAlert size={13} className="text-red-500" />
+          <span className="text-xs text-red-600 font-semibold">Point bloquant — dossier KO</span>
         </div>
       )}
+      <div className="p-4">
+        {/* Question label */}
+        <div className="flex items-start gap-2 mb-3">
+          <span className="text-xs font-bold text-slate-400 mt-0.5 flex-shrink-0">Q{index}</span>
+          <p className="text-sm font-semibold text-slate-800">{label}</p>
+        </div>
+
+        {/* Answer field */}
+        <div className={`border rounded-lg px-3 py-2.5 text-sm min-h-[40px] ${
+          status === 'ok'
+            ? 'border-emerald-200 bg-emerald-50/50 text-emerald-800'
+            : status === 'error'
+            ? 'border-red-200 bg-red-50/50 text-red-800'
+            : 'border-amber-200 bg-amber-50/50 text-amber-800'
+        }`}>
+          {answer || <span className="text-slate-400 italic">Non renseigné</span>}
+        </div>
+
+        {/* AI Reasoning block */}
+        <div className="mt-3 bg-blue-50 border border-blue-100 rounded-lg overflow-hidden">
+          <button
+            className="w-full flex items-center justify-between px-3 py-2 text-left"
+            onClick={() => setReasoningOpen(!reasoningOpen)}
+          >
+            <div className="flex items-center gap-2">
+              <Sparkles size={13} className="text-blue-500" />
+              <span className="text-xs font-semibold text-blue-700">Analyse IA</span>
+            </div>
+            {reasoningOpen
+              ? <ChevronUp size={12} className="text-blue-400" />
+              : <ChevronDown size={12} className="text-blue-400" />}
+          </button>
+          {reasoningOpen && (
+            <div className="px-3 pb-3 space-y-2 border-t border-blue-100">
+              {reasoning.length > 0 ? (
+                <ul className="space-y-1 pt-2">
+                  {reasoning.map((r, i) => (
+                    <li key={i} className="flex items-start gap-1.5 text-xs text-blue-700">
+                      <span className="text-blue-400 mt-0.5 flex-shrink-0">•</span>
+                      {r}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-xs text-blue-600 pt-2 italic">Aucun détail disponible</p>
+              )}
+              {sources.length > 0 && (
+                <div className="pt-1">
+                  {sources.map((src, i) => (
+                    <span
+                      key={i}
+                      className="inline-flex items-center gap-1 text-xs bg-blue-100 text-blue-600 px-2 py-0.5 rounded-full mr-1 mb-1"
+                    >
+                      <FileText size={10} />
+                      {src}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
 
-function ConfidenceGauge({ value }: { value: number }) {
-  const color = value >= 80 ? '#10b981' : value >= 60 ? '#f59e0b' : '#ef4444';
-  const circumference = 2 * Math.PI * 40;
-  const offset = circumference - (value / 100) * circumference;
-  return (
-    <div className="flex flex-col items-center gap-1">
-      <div className="relative w-24 h-24">
-        <svg className="w-24 h-24 -rotate-90" viewBox="0 0 100 100">
-          <circle cx="50" cy="50" r="40" fill="none" stroke="#f1f5f9" strokeWidth="10" />
-          <circle cx="50" cy="50" r="40" fill="none" stroke={color} strokeWidth="10"
-            strokeDasharray={circumference} strokeDashoffset={offset} strokeLinecap="round"
-            style={{ transition: 'stroke-dashoffset 0.5s ease' }} />
-        </svg>
-        <div className="absolute inset-0 flex items-center justify-center">
-          <span className="text-xl font-bold" style={{ color }}>{value}%</span>
-        </div>
-      </div>
-      <p className="text-xs text-slate-500">Indice de confiance IA</p>
-    </div>
-  );
-}
+// ── DossierDetail ──────────────────────────────────────────────────────────
 
 export function DossierDetail() {
   const { reference } = useParams<{ reference: string }>();
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<'completude' | 'regles'>('completude');
-  const [selectedDoc, setSelectedDoc] = useState<string | null>(null);
   const [viewerDoc, setViewerDoc] = useState<DocumentItem | null>(null);
   const [showDecisionModal, setShowDecisionModal] = useState(false);
   const [decision, setDecision] = useState<RecommendationDecision | null>(null);
@@ -103,18 +148,20 @@ export function DossierDetail() {
   if (error) return <div className="p-6"><ErrorMessage message={error} /></div>;
   if (!dossier) return null;
 
-  const { recommendation } = dossier;
-
-  const recColor = !recommendation ? null :
-    recommendation.decision === 'approuver'
-      ? { bg: 'bg-emerald-50', border: 'border-emerald-200', text: 'text-emerald-700', label: 'Approuver', icon: ThumbsUp }
-      : recommendation.decision === 'refuser'
-      ? { bg: 'bg-red-50', border: 'border-red-200', text: 'text-red-700', label: 'Refuser', icon: ThumbsDown }
-      : { bg: 'bg-amber-50', border: 'border-amber-200', text: 'text-amber-700', label: 'Demander complément', icon: MessageSquare };
-
-  const RecIcon = recColor?.icon ?? MessageSquare;
-
-  const selectedDocument = dossier.documents.find((d) => d.id === selectedDoc);
+  // Map analysis_results → instruction questions
+  const instructionQuestions = dossier.analysis_results.map((r, i) => ({
+    id: r.id,
+    index: i + 1,
+    label: r.label,
+    answer: r.message,
+    status: r.statut as 'ok' | 'warning' | 'error',
+    reasoning: r.details ?? [],
+    isEligibilityKO: r.statut === 'error',
+    sources: dossier.documents
+      .filter((d) => d.statut !== 'manquant')
+      .slice(0, 2)
+      .map((d) => d.nom),
+  }));
 
   const handleConfirmDecision = async () => {
     if (!decision) return;
@@ -136,19 +183,28 @@ export function DossierDetail() {
     }
   };
 
+  const hasKO = instructionQuestions.some((q) => q.isEligibilityKO);
+
   return (
     <div className="flex flex-col h-screen overflow-hidden">
       {/* Top bar */}
       <div className="flex items-center justify-between px-5 py-3 border-b border-slate-200 bg-white flex-shrink-0">
         <div className="flex items-center gap-3">
-          <button onClick={() => navigate('/dossiers')}
-            className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors">
+          <button
+            onClick={() => navigate('/dossiers')}
+            className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors"
+          >
             <ArrowLeft size={16} className="text-slate-500" />
           </button>
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-base font-bold text-slate-800">{dossier.reference}</h1>
               <StatusBadge type="dossier" status={dossier.statut} />
+              {hasKO && (
+                <span className="flex items-center gap-1 text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded-full font-semibold">
+                  <XCircle size={11} />KO
+                </span>
+              )}
             </div>
             <p className="text-xs text-slate-500">
               {dossier.demandeur.prenom} {dossier.demandeur.nom} · {dossier.type} · {dossier.instructeur ?? 'Non assigné'}
@@ -159,217 +215,174 @@ export function DossierDetail() {
           <button className="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors text-slate-600">
             <Download size={14} />Exporter
           </button>
-          {(dossier.statut === 'en_cours' || dossier.statut === 'en_attente') && (
-            <button onClick={() => setShowDecisionModal(true)}
-              className="flex items-center gap-2 px-4 py-1.5 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors">
-              <CheckCircle size={14} />Valider la décision
-            </button>
-          )}
         </div>
       </div>
 
       {/* 3-column layout */}
       <div className="flex flex-1 overflow-hidden">
-        {/* Left: Documents */}
+
+        {/* ── LEFT (20%) — Form link + file tree ── */}
         <div className="w-64 border-r border-slate-200 bg-white flex flex-col flex-shrink-0 overflow-hidden">
-          <div className="px-4 py-3 border-b border-slate-100">
-            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Documents</p>
+          <div className="p-3 border-b border-slate-100">
+            {/* Formulaire de demande card */}
+            <a
+              href="#"
+              onClick={(e) => e.preventDefault()}
+              className="flex items-center gap-3 p-3 rounded-xl border border-slate-200 hover:border-blue-300 hover:bg-blue-50 transition-colors group"
+            >
+              <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                <ClipboardList size={16} className="text-blue-600" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-semibold text-slate-800">Formulaire de demande</p>
+                <p className="text-xs text-slate-400">Réponses du demandeur</p>
+              </div>
+              <ExternalLink size={13} className="text-slate-300 group-hover:text-blue-400 flex-shrink-0" />
+            </a>
           </div>
-          <div className="flex-1 overflow-y-auto p-3 space-y-1.5">
+
+          {/* File tree */}
+          <div className="px-4 py-2.5 border-b border-slate-100">
+            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Documents déposés</p>
+          </div>
+          <div className="flex-1 overflow-y-auto p-3 space-y-0.5">
             {dossier.documents.map((doc) => (
-              <div key={doc.id}
-                className={`rounded-lg border transition-colors ${
-                  selectedDoc === doc.id ? 'bg-blue-50 border-blue-200' : 'border-transparent hover:bg-slate-50'
-                }`}>
-                <button
-                  onClick={() => setSelectedDoc(selectedDoc === doc.id ? null : doc.id)}
-                  className="w-full flex items-start gap-2.5 p-3 text-left">
-                  <DocumentIcon status={doc.statut} />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs font-medium text-slate-800 leading-snug">{doc.nom}</p>
-                    <p className={`text-xs mt-0.5 ${
-                      doc.statut === 'valide' ? 'text-emerald-600' :
-                      doc.statut === 'invalide' ? 'text-red-500' :
-                      doc.statut === 'manquant' ? 'text-slate-400' : 'text-amber-500'
-                    }`}>
-                      {doc.statut === 'valide' ? 'Validé' : doc.statut === 'invalide' ? 'Invalide' :
-                       doc.statut === 'manquant' ? 'Manquant' : 'En attente'}
-                    </p>
-                    {doc.file_size && <p className="text-xs text-slate-400">{doc.file_size}</p>}
-                  </div>
-                  {!doc.obligatoire && (
-                    <span className="text-xs text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded flex-shrink-0">opt.</span>
+              <button
+                key={doc.id}
+                onClick={() => doc.minio_key ? setViewerDoc(doc) : null}
+                className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-left transition-colors ${
+                  doc.minio_key
+                    ? 'hover:bg-slate-50 cursor-pointer'
+                    : 'cursor-default opacity-60'
+                }`}
+              >
+                <FileIcon contentType={doc.content_type} />
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs text-slate-700 truncate">{doc.nom}</p>
+                  {doc.file_size && (
+                    <p className="text-xs text-slate-400">{doc.file_size}</p>
                   )}
-                </button>
+                </div>
+                <DocStatusDot status={doc.statut} />
                 {doc.minio_key && (
-                  <div className="flex gap-1 px-3 pb-2">
-                    <button
-                      onClick={() => setViewerDoc(doc)}
-                      className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 px-2 py-1 rounded hover:bg-blue-50 transition-colors">
-                      <Eye size={11} />Voir
-                    </button>
-                    <a
-                      href={api.getDocumentContentUrl(dossier.reference, doc.id, true)}
-                      download
-                      className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700 px-2 py-1 rounded hover:bg-slate-100 transition-colors">
-                      <Download size={11} />Télécharger
-                    </a>
-                  </div>
+                  <Eye size={11} className="text-slate-300 hover:text-blue-400 flex-shrink-0" />
                 )}
-              </div>
+              </button>
             ))}
-            <div className="border-2 border-dashed border-slate-200 rounded-lg p-3 text-center mt-2">
-              <Upload size={14} className="text-slate-300 mx-auto mb-1" />
-              <p className="text-xs text-slate-400">Ajouter un document</p>
-            </div>
+            {dossier.documents.length === 0 && (
+              <p className="text-xs text-slate-400 text-center py-6 italic">Aucun document</p>
+            )}
           </div>
-          {selectedDocument && (
-            <div className="border-t border-slate-100 p-3 bg-slate-50 flex-shrink-0">
-              <p className="text-xs font-semibold text-slate-600 mb-1">{selectedDocument.nom}</p>
-              {selectedDocument.validation_message && (
-                <p className={`text-xs ${
-                  selectedDocument.statut === 'valide' ? 'text-emerald-600' :
-                  selectedDocument.statut === 'invalide' ? 'text-red-500' : 'text-slate-500'
-                }`}>{selectedDocument.validation_message}</p>
-              )}
-              {selectedDocument.uploaded_at && (
-                <p className="text-xs text-slate-400 mt-1">Déposé le {selectedDocument.uploaded_at}</p>
-              )}
-            </div>
-          )}
         </div>
 
-        {/* Center: AI Analysis */}
+        {/* ── CENTER (50%) — Instruction form ── */}
         <div className="flex-1 flex flex-col overflow-hidden bg-slate-50">
-          <div className="bg-white border-b border-slate-200 px-5 flex-shrink-0">
-            <div className="flex gap-0">
-              {[
-                { id: 'completude' as const, label: 'Complétude documentaire' },
-                { id: 'regles' as const, label: 'Validation des règles' },
-              ].map((tab) => (
-                <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-                  className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
-                    activeTab === tab.id
-                      ? 'border-blue-600 text-blue-600'
-                      : 'border-transparent text-slate-500 hover:text-slate-700'
-                  }`}>
-                  {tab.label}
-                </button>
-              ))}
+          <div className="bg-white border-b border-slate-200 px-5 py-3 flex-shrink-0 flex items-center justify-between">
+            <div>
+              <p className="text-sm font-semibold text-slate-800">Formulaire d'instruction</p>
+              <p className="text-xs text-slate-500">{instructionQuestions.length} question(s) à instruire</p>
+            </div>
+            <div className="flex items-center gap-1.5 text-xs text-slate-500 bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-200">
+              <Sparkles size={13} className="text-blue-500" />
+              Pré-rempli par IA
             </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto p-5 space-y-3">
-            {activeTab === 'completude' && (
-              <>
-                <div className="bg-white border border-slate-200 rounded-xl p-4">
-                  <h3 className="text-sm font-semibold text-slate-700 mb-3">État des documents</h3>
-                  <div className="grid grid-cols-2 gap-3">
-                    {[
-                      { label: 'Reçus', value: dossier.documents.filter(d => d.statut !== 'manquant').length, color: 'text-blue-600' },
-                      { label: 'Validés', value: dossier.documents.filter(d => d.statut === 'valide').length, color: 'text-emerald-600' },
-                      { label: 'Invalides', value: dossier.documents.filter(d => d.statut === 'invalide').length, color: 'text-red-600' },
-                      { label: 'Manquants', value: dossier.documents.filter(d => d.statut === 'manquant').length, color: 'text-slate-400' },
-                    ].map((item) => (
-                      <div key={item.label} className="bg-slate-50 rounded-lg p-3">
-                        <p className="text-xs text-slate-500">{item.label}</p>
-                        <p className={`text-lg font-bold mt-0.5 ${item.color}`}>
-                          {item.value}<span className="text-xs text-slate-400 font-normal">/{dossier.documents.length}</span>
-                        </p>
-                      </div>
-                    ))}
-                  </div>
+          <div className="flex-1 overflow-y-auto p-5">
+            {instructionQuestions.length > 0 ? (
+              instructionQuestions.map((q) => (
+                <InstructionCard
+                  key={q.id}
+                  index={q.index}
+                  label={q.label}
+                  answer={q.answer}
+                  status={q.status}
+                  reasoning={q.reasoning}
+                  isEligibilityKO={q.isEligibilityKO}
+                  sources={q.sources}
+                />
+              ))
+            ) : (
+              <div className="text-center py-16">
+                <div className="w-12 h-12 bg-slate-100 rounded-xl flex items-center justify-center mx-auto mb-3">
+                  <CheckSquare size={20} className="text-slate-300" />
                 </div>
-                <div className="space-y-2">
-                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide px-1">Analyse par document</p>
-                  {dossier.analysis_results
-                    .filter(r => r.statut !== undefined)
-                    .slice(0, 2)
-                    .map((r) => <AnalysisRow key={r.id} result={r} />)}
-                </div>
-              </>
-            )}
-            {activeTab === 'regles' && (
-              <div className="space-y-2">
-                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide px-1">Règles de validation</p>
-                {dossier.analysis_results.map((r) => <AnalysisRow key={r.id} result={r} />)}
-                {dossier.analysis_results.length === 0 && (
-                  <p className="text-sm text-slate-400 text-center py-8">Aucun résultat d'analyse disponible.</p>
-                )}
+                <p className="text-sm text-slate-400 font-medium">Aucune question d'instruction</p>
+                <p className="text-xs text-slate-400 mt-1">Configurez le formulaire d'instruction dans le workflow</p>
               </div>
             )}
           </div>
         </div>
 
-        {/* Right: AI Recommendation */}
-        <div className="w-72 border-l border-slate-200 bg-white flex flex-col flex-shrink-0 overflow-hidden">
+        {/* ── RIGHT (30%) — Progress + validate ── */}
+        <div className="w-80 border-l border-slate-200 bg-white flex flex-col flex-shrink-0 overflow-hidden">
           <div className="px-4 py-3 border-b border-slate-100">
-            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Recommandation IA</p>
+            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Avancement de l'instruction</p>
           </div>
-          <div className="flex-1 overflow-y-auto p-4 space-y-4">
-            {recommendation ? (
-              <>
-                <div className="flex justify-center pt-2">
-                  <ConfidenceGauge value={recommendation.confidence} />
-                </div>
 
-                {recColor && (
-                  <div className={`rounded-xl border p-4 ${recColor.bg} ${recColor.border}`}>
-                    <div className="flex items-center gap-2 mb-2">
-                      <RecIcon size={16} className={recColor.text} />
-                      <p className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Décision suggérée</p>
+          <div className="flex-1 overflow-y-auto p-4">
+            {instructionQuestions.length > 0 ? (
+              <div className="space-y-1">
+                {instructionQuestions.map((q) => (
+                  <div
+                    key={q.id}
+                    className={`flex items-start gap-3 px-3 py-2.5 rounded-lg ${
+                      q.isEligibilityKO ? 'bg-red-50' : q.status === 'warning' ? 'bg-amber-50' : 'bg-slate-50'
+                    }`}
+                  >
+                    {q.isEligibilityKO ? (
+                      <XCircle size={15} className="text-red-500 flex-shrink-0 mt-0.5" />
+                    ) : q.status === 'ok' ? (
+                      <CheckCircle size={15} className="text-emerald-500 flex-shrink-0 mt-0.5" />
+                    ) : (
+                      <AlertTriangle size={15} className="text-amber-500 flex-shrink-0 mt-0.5" />
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs text-slate-700 leading-snug truncate">{q.label}</p>
                     </div>
-                    <p className={`text-base font-bold ${recColor.text}`}>{recColor.label}</p>
-                    <p className="text-xs text-slate-600 mt-1.5 leading-relaxed">{recommendation.motif}</p>
+                    {q.isEligibilityKO && (
+                      <span className="text-xs bg-red-100 text-red-600 px-1.5 py-0.5 rounded font-bold flex-shrink-0">KO</span>
+                    )}
                   </div>
-                )}
-
-                {recommendation.points_bloquants.length > 0 && (
-                  <div>
-                    <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Points bloquants</p>
-                    <div className="space-y-1.5">
-                      {recommendation.points_bloquants.map((p, i) => (
-                        <div key={i} className="flex items-start gap-2 bg-red-50 border border-red-100 rounded-lg px-3 py-2">
-                          <XCircle size={13} className="text-red-500 flex-shrink-0 mt-0.5" />
-                          <p className="text-xs text-red-700">{p}</p>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {recommendation.points_attention.length > 0 && (
-                  <div>
-                    <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Points d'attention</p>
-                    <div className="space-y-1.5">
-                      {recommendation.points_attention.map((p, i) => (
-                        <div key={i} className="flex items-start gap-2 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
-                          <AlertTriangle size={13} className="text-amber-500 flex-shrink-0 mt-0.5" />
-                          <p className="text-xs text-amber-700">{p}</p>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </>
+                ))}
+              </div>
             ) : (
-              <p className="text-xs text-slate-400 text-center py-8">Aucune recommandation disponible.</p>
+              <p className="text-xs text-slate-400 text-center py-8 italic">Aucune question</p>
             )}
+          </div>
 
-            {(dossier.statut === 'en_cours' || dossier.statut === 'en_attente') && (
-              <div className="space-y-2 pt-2">
-                <button onClick={() => { setDecision('approuver'); setShowDecisionModal(true); }}
-                  className="w-full flex items-center justify-center gap-2 py-2.5 bg-emerald-600 text-white text-sm font-medium rounded-lg hover:bg-emerald-700 transition-colors">
+          {/* Validate button — sticky bottom */}
+          <div className="border-t border-slate-200 p-4 flex-shrink-0 space-y-2">
+            {hasKO && (
+              <div className="flex items-center gap-2 bg-red-50 border border-red-100 rounded-lg px-3 py-2 mb-2">
+                <XCircle size={13} className="text-red-500 flex-shrink-0" />
+                <p className="text-xs text-red-600">Point bloquant détecté</p>
+              </div>
+            )}
+            {(dossier.statut === 'en_cours' || dossier.statut === 'en_attente') ? (
+              <>
+                <button
+                  onClick={() => { setDecision('approuver'); setShowDecisionModal(true); }}
+                  className="w-full flex items-center justify-center gap-2 py-2.5 bg-emerald-600 text-white text-sm font-medium rounded-lg hover:bg-emerald-700 transition-colors"
+                >
                   <ThumbsUp size={14} />Approuver
                 </button>
-                <button onClick={() => { setDecision('refuser'); setShowDecisionModal(true); }}
-                  className="w-full flex items-center justify-center gap-2 py-2.5 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700 transition-colors">
+                <button
+                  onClick={() => { setDecision('refuser'); setShowDecisionModal(true); }}
+                  className="w-full flex items-center justify-center gap-2 py-2.5 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700 transition-colors"
+                >
                   <ThumbsDown size={14} />Refuser
                 </button>
-                <button onClick={() => { setDecision('complement'); setShowDecisionModal(true); }}
-                  className="w-full flex items-center justify-center gap-2 py-2.5 border border-slate-200 text-slate-600 text-sm font-medium rounded-lg hover:bg-slate-50 transition-colors">
+                <button
+                  onClick={() => { setDecision('complement'); setShowDecisionModal(true); }}
+                  className="w-full flex items-center justify-center gap-2 py-2.5 border border-slate-200 text-slate-600 text-sm font-medium rounded-lg hover:bg-slate-50 transition-colors"
+                >
                   <MessageSquare size={14} />Demander un complément
                 </button>
+              </>
+            ) : (
+              <div className="text-center py-2">
+                <p className="text-xs text-slate-400">Dossier {dossier.statut}</p>
               </div>
             )}
           </div>
@@ -389,12 +402,14 @@ export function DossierDetail() {
                 <a
                   href={api.getDocumentContentUrl(dossier.reference, viewerDoc.id, true)}
                   download
-                  className="flex items-center gap-1.5 text-xs text-slate-600 border border-slate-200 px-3 py-1.5 rounded-lg hover:bg-slate-50 transition-colors">
+                  className="flex items-center gap-1.5 text-xs text-slate-600 border border-slate-200 px-3 py-1.5 rounded-lg hover:bg-slate-50 transition-colors"
+                >
                   <Download size={13} />Télécharger
                 </a>
                 <button
                   onClick={() => setViewerDoc(null)}
-                  className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors">
+                  className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors"
+                >
                   <X size={16} className="text-slate-500" />
                 </button>
               </div>
@@ -420,7 +435,8 @@ export function DossierDetail() {
                   <a
                     href={api.getDocumentContentUrl(dossier.reference, viewerDoc.id, true)}
                     download
-                    className="flex items-center gap-2 text-sm text-blue-600 hover:text-blue-700 font-medium">
+                    className="flex items-center gap-2 text-sm text-blue-600 hover:text-blue-700 font-medium"
+                  >
                     <Download size={14} />Télécharger le fichier
                   </a>
                 </div>
@@ -445,12 +461,16 @@ export function DossierDetail() {
 
             {!decision && (
               <div className="flex gap-2 mb-4">
-                <button onClick={() => setDecision('approuver')}
-                  className="flex-1 py-2 text-sm font-medium rounded-lg border-2 border-slate-200 text-slate-600 hover:border-emerald-300 transition-colors">
+                <button
+                  onClick={() => setDecision('approuver')}
+                  className="flex-1 py-2 text-sm font-medium rounded-lg border-2 border-slate-200 text-slate-600 hover:border-emerald-300 transition-colors"
+                >
                   Approuver
                 </button>
-                <button onClick={() => setDecision('refuser')}
-                  className="flex-1 py-2 text-sm font-medium rounded-lg border-2 border-slate-200 text-slate-600 hover:border-red-300 transition-colors">
+                <button
+                  onClick={() => setDecision('refuser')}
+                  className="flex-1 py-2 text-sm font-medium rounded-lg border-2 border-slate-200 text-slate-600 hover:border-red-300 transition-colors"
+                >
                   Refuser
                 </button>
               </div>
@@ -460,19 +480,24 @@ export function DossierDetail() {
               <label className="block text-xs font-medium text-slate-600 mb-1.5">
                 Commentaire {decision && decision !== 'complement' ? '(optionnel)' : '(motif)'}
               </label>
-              <textarea value={commentaire} onChange={(e) => setCommentaire(e.target.value)}
-                rows={3} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+              <textarea
+                value={commentaire}
+                onChange={(e) => setCommentaire(e.target.value)}
+                rows={3}
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
                 placeholder={
                   decision === 'approuver' ? 'Dossier conforme, approuvé...' :
                   decision === 'refuser' ? 'Motif du refus...' :
                   'Précisez les documents ou informations manquantes...'
-                } />
+                }
+              />
             </div>
 
             <div className="flex gap-2">
               <button
                 onClick={() => { setShowDecisionModal(false); setDecision(null); setCommentaire(''); }}
-                className="flex-1 py-2 text-sm font-medium border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50 transition-colors">
+                className="flex-1 py-2 text-sm font-medium border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50 transition-colors"
+              >
                 Annuler
               </button>
               <button
@@ -482,7 +507,8 @@ export function DossierDetail() {
                   decision === 'approuver' ? 'bg-emerald-600 hover:bg-emerald-700' :
                   decision === 'refuser' ? 'bg-red-600 hover:bg-red-700' :
                   'bg-blue-600 hover:bg-blue-700'
-                }`}>
+                }`}
+              >
                 {saving ? 'Enregistrement...' : 'Confirmer'}
               </button>
             </div>

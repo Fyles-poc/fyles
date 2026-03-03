@@ -36,6 +36,21 @@ class AIConfig(BaseModel):
     prompt_systeme: str = ""
 
 
+class FormBlock(BaseModel):
+    id: str
+    type: str
+    label: str
+    required: bool = True
+    eligibility: Optional[bool] = None
+    options: Optional[list[str]] = None
+
+
+class FormPage(BaseModel):
+    id: str
+    title: str
+    blocks: list[FormBlock] = Field(default_factory=list)
+
+
 class Workflow(Document):
     nom: str
     description: str
@@ -43,6 +58,8 @@ class Workflow(Document):
     documents: list[WorkflowDocument] = Field(default_factory=list)
     nodes: list[WorkflowNode] = Field(default_factory=list)
     ai_config: AIConfig = Field(default_factory=AIConfig)
+    formulaire_demande: list[FormPage] = Field(default_factory=list)
+    formulaire_instruction: list[FormPage] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
     dossiers_count: int = 0
@@ -58,3 +75,5 @@ class WorkflowUpdate(BaseModel):
     documents: Optional[list[WorkflowDocument]] = None
     nodes: Optional[list[WorkflowNode]] = None
     ai_config: Optional[AIConfig] = None
+    formulaire_demande: Optional[list[FormPage]] = None
+    formulaire_instruction: Optional[list[FormPage]] = None

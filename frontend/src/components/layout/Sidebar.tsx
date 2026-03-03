@@ -3,7 +3,6 @@ import {
   LayoutDashboard,
   FolderOpen,
   GitBranch,
-  FileText,
   Settings,
   Zap,
 } from 'lucide-react';
@@ -12,8 +11,6 @@ const navItems = [
   { to: '/', icon: LayoutDashboard, label: 'Tableau de bord', end: true },
   { to: '/dossiers', icon: FolderOpen, label: 'Dossiers' },
   { to: '/workflows', icon: GitBranch, label: 'Workflows' },
-  { to: '/documents', icon: FileText, label: 'Documents' },
-  { to: '/moteur-ia', icon: Zap, label: 'Moteur IA' },
 ];
 
 export function Sidebar() {
