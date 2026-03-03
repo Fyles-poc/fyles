@@ -134,6 +134,25 @@ function BlockCard({
           <span className="text-xs text-red-600 font-medium">KO si réponse Non</span>
         </div>
       )}
+      {block.type !== 'header' && block.type !== 'text' && block.type !== 'eligibility' && (
+        <button
+          onClick={onToggleRequired}
+          className={`w-full border-b px-4 py-1.5 flex items-center gap-1.5 transition-colors ${
+            block.required
+              ? 'bg-amber-50 border-amber-100 hover:bg-amber-100'
+              : 'bg-slate-50 border-slate-100 hover:bg-slate-100'
+          }`}
+        >
+          <Icon size={12} className={block.required ? 'text-amber-500' : 'text-slate-400'} />
+          <span className={`text-xs font-semibold ${block.required ? 'text-amber-700' : 'text-slate-500'}`}>
+            {block.required
+              ? (block.type === 'file_upload' || block.type === 'multifile_upload' ? 'Document obligatoire' : 'Obligatoire')
+              : (block.type === 'file_upload' || block.type === 'multifile_upload' ? 'Document optionnel' : 'Optionnel')
+            }
+          </span>
+          <span className="ml-auto text-xs text-slate-300">cliquer pour modifier</span>
+        </button>
+      )}
       <div className="flex items-start gap-3 px-4 py-3">
         {/* Drag handle */}
         <div className="mt-1 cursor-grab text-slate-300 hover:text-slate-500 flex-shrink-0">
@@ -243,15 +262,6 @@ function BlockCard({
           {/* Footer controls */}
           {block.type !== 'header' && block.type !== 'text' && (
             <div className="flex items-center gap-4 mt-3 pt-2 border-t border-slate-100">
-              <label className="flex items-center gap-1.5 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={block.required}
-                  onChange={onToggleRequired}
-                  className="accent-blue-600 w-3.5 h-3.5"
-                />
-                <span className="text-xs text-slate-500">Requis</span>
-              </label>
               {isInstruction && block.type !== 'eligibility' && (
                 <label className="flex items-center gap-1.5 cursor-pointer">
                   <input
@@ -379,7 +389,7 @@ function FormBuilder({
 
   const addPage = () => {
     const newPage: FormPage = {
-      id: `p${Date.now()}`,
+      id: `p${crypto.randomUUID()}`,
       title: `Page ${pages.length + 1}`,
       blocks: [],
     };
@@ -389,7 +399,7 @@ function FormBuilder({
 
   const addBlock = (type: FieldType) => {
     const newBlock: FormBlock = {
-      id: `b${Date.now()}`,
+      id: `b${crypto.randomUUID()}`,
       type,
       label: '',
       required: type !== 'header' && type !== 'text',
