@@ -1,8 +1,8 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, Plus, Trash2, ChevronDown, ChevronUp,
-  FileText, GitBranch, Save, GripVertical,
+  FileText, GitBranch, Save, GripVertical, ExternalLink,
   Type, AlignLeft, AlignJustify, List, ChevronDownSquare,
   CheckSquare, Hash, Mail, Phone, Calendar,
   Upload, Files, Heading1, AlertCircle, X, ShieldAlert, Search,
@@ -627,10 +627,41 @@ export function WorkflowDetail() {
     { id: 'p1', title: 'Page 1', blocks: [] },
   ]);
 
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saved' | 'error'>('idle');
+
   const { data: workflow, loading, error } = useApi(
     () => api.getWorkflow(id!),
     [id]
   );
+
+  useEffect(() => {
+    if (!workflow) return;
+    if (workflow.formulaire_demande?.length > 0) {
+      setDemandePages(workflow.formulaire_demande as unknown as FormPage[]);
+    }
+    if (workflow.formulaire_instruction?.length > 0) {
+      setInstructionPages(workflow.formulaire_instruction as unknown as FormPage[]);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workflow?.id]);
+
+  const handleSave = async () => {
+    setIsSaving(true);
+    setSaveStatus('idle');
+    try {
+      await api.updateWorkflow(id!, {
+        formulaire_demande: demandePages,
+        formulaire_instruction: instructionPages,
+      });
+      setSaveStatus('saved');
+      setTimeout(() => setSaveStatus('idle'), 2500);
+    } catch {
+      setSaveStatus('error');
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   if (loading) return <div className="p-6"><LoadingSpinner label="Chargement du workflow..." /></div>;
   if (error) return <div className="p-6"><ErrorMessage message={error} /></div>;
@@ -662,8 +693,26 @@ export function WorkflowDetail() {
             <span className="text-xs bg-slate-100 text-slate-600 px-3 py-1.5 rounded-full font-medium">
               {workflow.type}
             </span>
-            <button className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors">
-              <Save size={14} />Enregistrer
+            <button
+              onClick={() => window.open(`/forms/${id}`, '_blank')}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors"
+            >
+              <ExternalLink size={14} />
+              Prévisualiser
+            </button>
+            <button
+              onClick={handleSave}
+              disabled={isSaving}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-70 ${
+                saveStatus === 'saved'
+                  ? 'bg-emerald-600 text-white'
+                  : saveStatus === 'error'
+                  ? 'bg-red-600 text-white hover:bg-red-700'
+                  : 'bg-blue-600 text-white hover:bg-blue-700'
+              }`}
+            >
+              <Save size={14} />
+              {isSaving ? 'Enregistrement…' : saveStatus === 'saved' ? 'Enregistré !' : saveStatus === 'error' ? 'Erreur' : 'Enregistrer'}
             </button>
           </div>
         </div>

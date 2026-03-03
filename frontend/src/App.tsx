@@ -8,11 +8,15 @@ import { WorkflowDetail } from './pages/WorkflowDetail';
 import { Documents } from './pages/Documents';
 import { AIEngine } from './pages/AIEngine';
 import { Settings } from './pages/Settings';
+import { FormPreview } from './pages/FormPreview';
 
 export default function App() {
   return (
     <BrowserRouter>
       <Routes>
+        {/* Page publique standalone — hors navigation */}
+        <Route path="/forms/:workflowId" element={<FormPreview />} />
+
         <Route element={<Layout />}>
           <Route path="/" element={<Dashboard />} />
           <Route path="/dossiers" element={<DossiersList />} />

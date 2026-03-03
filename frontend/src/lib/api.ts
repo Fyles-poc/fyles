@@ -47,6 +47,15 @@ export interface Dossier {
   recommendation?: AIRecommendation; created_at: string;
 }
 
+export interface FormBlock {
+  id: string; type: string; label: string; required: boolean;
+  eligibility?: boolean; options?: string[];
+}
+
+export interface FormPage {
+  id: string; title: string; blocks: FormBlock[];
+}
+
 export interface WorkflowValidation {
   id: string; type: string; label: string; prompt?: string;
 }
@@ -72,6 +81,8 @@ export interface Workflow {
   documents: WorkflowDocument[]; nodes: WorkflowNode[];
   ai_config: AIConfig; created_at: string; updated_at: string;
   dossiers_count: number;
+  formulaire_demande: FormPage[];
+  formulaire_instruction: FormPage[];
 }
 
 export interface User {
