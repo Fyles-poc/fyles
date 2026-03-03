@@ -21,7 +21,7 @@ function FileUploadField() {
   if (file) {
     return (
       <div className="border border-slate-200 rounded-lg px-4 py-3 flex items-center gap-3 bg-slate-50">
-        <div className="w-9 h-9 rounded-lg bg-blue-50 flex items-center justify-center flex-shrink-0">
+        <div className="w-9 h-9 rounded-lg bg-blue-50 flex items-center justify-center shrink-0">
           <Paperclip size={15} className="text-blue-500" />
         </div>
         <div className="flex-1 min-w-0">
@@ -230,7 +230,7 @@ export function FormPreview() {
   const isLast = currentPage === pages.length - 1;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50/30 py-10 px-4">
+    <div className="min-h-screen bg-linear-to-br from-slate-50 to-blue-50/30 py-10 px-4">
       <div className="max-w-xl mx-auto">
 
         {/* Header card */}

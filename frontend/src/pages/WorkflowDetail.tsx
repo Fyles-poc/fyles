@@ -5,12 +5,11 @@ import {
   FileText, GitBranch, Save, GripVertical, ExternalLink,
   Type, AlignLeft, AlignJustify, List, ChevronDownSquare,
   CheckSquare, Hash, Mail, Phone, Calendar,
-  Upload, Files, Heading1, AlertCircle, X, ShieldAlert, Search,
+  Upload, Files, Heading1, X, ShieldAlert, Search,
 } from 'lucide-react';
 import { api } from '../lib/api';
 import { useApi } from '../lib/useApi';
 import { LoadingSpinner, ErrorMessage } from '../components/ui/LoadingSpinner';
-import type { Workflow } from '../lib/api';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -155,12 +154,12 @@ function BlockCard({
       )}
       <div className="flex items-start gap-3 px-4 py-3">
         {/* Drag handle */}
-        <div className="mt-1 cursor-grab text-slate-300 hover:text-slate-500 flex-shrink-0">
+        <div className="mt-1 cursor-grab text-slate-300 hover:text-slate-500 shrink-0">
           <GripVertical size={16} />
         </div>
 
         {/* Icon */}
-        <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5 ${meta.color}`}>
+        <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 mt-0.5 ${meta.color}`}>
           <Icon size={14} />
         </div>
 
@@ -228,7 +227,7 @@ function BlockCard({
               <div className="space-y-1.5 mt-1">
                 {['Option 1', 'Option 2', 'Option 3'].map((o, i) => (
                   <div key={i} className="flex items-center gap-2">
-                    <div className={`w-4 h-4 border border-slate-300 ${block.type === 'multiselect' ? 'rounded' : 'rounded-full'} flex-shrink-0`} />
+                    <div className={`w-4 h-4 border border-slate-300 ${block.type === 'multiselect' ? 'rounded' : 'rounded-full'} shrink-0`} />
                     <span className="text-xs text-slate-400">{o}</span>
                   </div>
                 ))}
@@ -283,7 +282,7 @@ function BlockCard({
         {/* Delete */}
         <button
           onClick={onDelete}
-          className="opacity-0 group-hover:opacity-100 p-1 hover:bg-red-50 rounded-lg transition-all flex-shrink-0"
+          className="opacity-0 group-hover:opacity-100 p-1 hover:bg-red-50 rounded-lg transition-all shrink-0"
         >
           <Trash2 size={14} className="text-slate-300 hover:text-red-400" />
         </button>
@@ -340,13 +339,13 @@ function FormTree({ pages, currentPage }: { pages: FormPage[]; currentPage: numb
                     const Icon = m.icon;
                     return (
                       <div key={block.id} className="flex items-center gap-2 py-1">
-                        <Icon size={11} className="text-slate-400 flex-shrink-0" />
+                        <Icon size={11} className="text-slate-400 shrink-0" />
                         <span className="text-xs text-slate-600 truncate flex-1">{block.label || '(sans titre)'}</span>
                         {block.type === 'eligibility' && (
                           <span className="text-xs text-red-500 font-bold">KO</span>
                         )}
                         {block.eligibility && block.type !== 'eligibility' && (
-                          <ShieldAlert size={10} className="text-red-400 flex-shrink-0" />
+                          <ShieldAlert size={10} className="text-red-400 shrink-0" />
                         )}
                       </div>
                     );
@@ -464,7 +463,7 @@ function FormBuilder({
       {/* Canvas (70%) */}
       <div className="flex-1 flex flex-col overflow-hidden" style={{ width: '70%' }}>
         {/* Page tabs */}
-        <div className="flex items-center gap-1 px-5 pt-4 pb-0 border-b border-slate-100 bg-white flex-shrink-0">
+        <div className="flex items-center gap-1 px-5 pt-4 pb-0 border-b border-slate-100 bg-white shrink-0">
           {pages.map((p, idx) => (
             <button
               key={p.id}
@@ -516,7 +515,7 @@ function FormBuilder({
           <div className="relative">
             <button
               onClick={() => setShowAddMenu(!showAddMenu)}
-              className="flex items-center gap-2 text-sm text-blue-600 font-medium hover:text-blue-700 transition-colors px-4 py-2.5 border-2 border-dashed border-blue-200 rounded-xl w-full justify-center hover:border-blue-400 hover:bg-blue-50 transition-all"
+              className="flex items-center gap-2 text-sm text-blue-600 font-medium hover:text-blue-700 px-4 py-2.5 border-2 border-dashed border-blue-200 rounded-xl w-full justify-center hover:border-blue-400 hover:bg-blue-50 transition-all"
             >
               <Plus size={16} />
               Ajouter un champ
@@ -545,7 +544,7 @@ function FormBuilder({
                     <p className="text-xs text-slate-500 mb-3">Sélectionnez le type de champ à ajouter au formulaire</p>
                     {/* Search */}
                     <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
-                      <Search size={13} className="text-slate-400 flex-shrink-0" />
+                      <Search size={13} className="text-slate-400 shrink-0" />
                       <input
                         type="text"
                         value={search}
@@ -582,7 +581,7 @@ function FormBuilder({
                                 onClick={() => addBlock(type)}
                                 className="flex items-center gap-3 w-full px-5 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors text-left"
                               >
-                                <span className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 ${meta.color}`}>
+                                <span className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${meta.color}`}>
                                   <Icon size={14} />
                                 </span>
                                 {label}
@@ -613,7 +612,7 @@ function FormBuilder({
       </div>
 
       {/* Tree (30%) */}
-      <div className="flex-shrink-0" style={{ width: '30%' }}>
+      <div className="shrink-0" style={{ width: '30%' }}>
         <FormTree pages={pages} currentPage={currentPage} />
       </div>
     </div>
@@ -685,7 +684,7 @@ export function WorkflowDetail() {
   return (
     <div className="flex flex-col h-screen overflow-hidden">
       {/* Header */}
-      <div className="px-6 pt-5 pb-0 bg-white border-b border-slate-200 flex-shrink-0">
+      <div className="px-6 pt-5 pb-0 bg-white border-b border-slate-200 shrink-0">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-3">
             <button

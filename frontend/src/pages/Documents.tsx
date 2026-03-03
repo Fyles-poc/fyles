@@ -66,7 +66,7 @@ export function Documents() {
               <tr key={doc.id} className="border-b border-slate-50 hover:bg-slate-50 transition-colors cursor-pointer">
                 <td className="px-5 py-3">
                   <div className="flex items-center gap-2">
-                    <FileText size={14} className="text-slate-400 flex-shrink-0" />
+                    <FileText size={14} className="text-slate-400 shrink-0" />
                     <span className="text-slate-800 font-medium text-xs">{doc.nom}</span>
                   </div>
                 </td>

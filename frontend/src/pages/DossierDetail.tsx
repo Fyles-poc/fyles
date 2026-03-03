@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
-  ArrowLeft, CheckCircle, XCircle, Clock,
+  ArrowLeft, CheckCircle, XCircle,
   AlertTriangle, ThumbsUp, ThumbsDown,
   MessageSquare, Download, Eye, X,
   ClipboardList, ExternalLink, FileText, Image, File,
@@ -24,10 +24,10 @@ function FileIcon({ contentType }: { contentType?: string }) {
 }
 
 function DocStatusDot({ status }: { status: DocumentItem['statut'] }) {
-  if (status === 'valide') return <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 flex-shrink-0" />;
-  if (status === 'invalide') return <span className="w-1.5 h-1.5 rounded-full bg-red-500 flex-shrink-0" />;
-  if (status === 'manquant') return <span className="w-1.5 h-1.5 rounded-full bg-slate-300 flex-shrink-0" />;
-  return <span className="w-1.5 h-1.5 rounded-full bg-amber-400 flex-shrink-0" />;
+  if (status === 'valide') return <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />;
+  if (status === 'invalide') return <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" />;
+  if (status === 'manquant') return <span className="w-1.5 h-1.5 rounded-full bg-slate-300 shrink-0" />;
+  return <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />;
 }
 
 // ── Instruction question card (center) ────────────────────────────────────
@@ -64,12 +64,12 @@ function InstructionCard({
       <div className="p-4">
         {/* Question label */}
         <div className="flex items-start gap-2 mb-3">
-          <span className="text-xs font-bold text-slate-400 mt-0.5 flex-shrink-0">Q{index}</span>
+          <span className="text-xs font-bold text-slate-400 mt-0.5 shrink-0">Q{index}</span>
           <p className="text-sm font-semibold text-slate-800">{label}</p>
         </div>
 
         {/* Answer field */}
-        <div className={`border rounded-lg px-3 py-2.5 text-sm min-h-[40px] ${
+        <div className={`border rounded-lg px-3 py-2.5 text-sm min-h-40 ${
           status === 'ok'
             ? 'border-emerald-200 bg-emerald-50/50 text-emerald-800'
             : status === 'error'
@@ -99,7 +99,7 @@ function InstructionCard({
                 <ul className="space-y-1 pt-2">
                   {reasoning.map((r, i) => (
                     <li key={i} className="flex items-start gap-1.5 text-xs text-blue-700">
-                      <span className="text-blue-400 mt-0.5 flex-shrink-0">•</span>
+                      <span className="text-blue-400 mt-0.5 shrink-0">•</span>
                       {r}
                     </li>
                   ))}
@@ -188,7 +188,7 @@ export function DossierDetail() {
   return (
     <div className="flex flex-col h-screen overflow-hidden">
       {/* Top bar */}
-      <div className="flex items-center justify-between px-5 py-3 border-b border-slate-200 bg-white flex-shrink-0">
+      <div className="flex items-center justify-between px-5 py-3 border-b border-slate-200 bg-white shrink-0">
         <div className="flex items-center gap-3">
           <button
             onClick={() => navigate('/dossiers')}
@@ -222,7 +222,7 @@ export function DossierDetail() {
       <div className="flex flex-1 overflow-hidden">
 
         {/* ── LEFT (20%) — Form link + file tree ── */}
-        <div className="w-64 border-r border-slate-200 bg-white flex flex-col flex-shrink-0 overflow-hidden">
+        <div className="w-64 border-r border-slate-200 bg-white flex flex-col shrink-0 overflow-hidden">
           <div className="p-3 border-b border-slate-100">
             {/* Formulaire de demande card */}
             <a
@@ -230,14 +230,14 @@ export function DossierDetail() {
               onClick={(e) => e.preventDefault()}
               className="flex items-center gap-3 p-3 rounded-xl border border-slate-200 hover:border-blue-300 hover:bg-blue-50 transition-colors group"
             >
-              <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0">
+              <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center shrink-0">
                 <ClipboardList size={16} className="text-blue-600" />
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-xs font-semibold text-slate-800">Formulaire de demande</p>
                 <p className="text-xs text-slate-400">Réponses du demandeur</p>
               </div>
-              <ExternalLink size={13} className="text-slate-300 group-hover:text-blue-400 flex-shrink-0" />
+              <ExternalLink size={13} className="text-slate-300 group-hover:text-blue-400 shrink-0" />
             </a>
           </div>
 
@@ -265,7 +265,7 @@ export function DossierDetail() {
                 </div>
                 <DocStatusDot status={doc.statut} />
                 {doc.minio_key && (
-                  <Eye size={11} className="text-slate-300 hover:text-blue-400 flex-shrink-0" />
+                  <Eye size={11} className="text-slate-300 hover:text-blue-400 shrink-0" />
                 )}
               </button>
             ))}
@@ -277,7 +277,7 @@ export function DossierDetail() {
 
         {/* ── CENTER (50%) — Instruction form ── */}
         <div className="flex-1 flex flex-col overflow-hidden bg-slate-50">
-          <div className="bg-white border-b border-slate-200 px-5 py-3 flex-shrink-0 flex items-center justify-between">
+          <div className="bg-white border-b border-slate-200 px-5 py-3 shrink-0 flex items-center justify-between">
             <div>
               <p className="text-sm font-semibold text-slate-800">Formulaire d'instruction</p>
               <p className="text-xs text-slate-500">{instructionQuestions.length} question(s) à instruire</p>
@@ -315,7 +315,7 @@ export function DossierDetail() {
         </div>
 
         {/* ── RIGHT (30%) — Progress + validate ── */}
-        <div className="w-80 border-l border-slate-200 bg-white flex flex-col flex-shrink-0 overflow-hidden">
+        <div className="w-80 border-l border-slate-200 bg-white flex flex-col shrink-0 overflow-hidden">
           <div className="px-4 py-3 border-b border-slate-100">
             <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Avancement de l'instruction</p>
           </div>
@@ -331,17 +331,17 @@ export function DossierDetail() {
                     }`}
                   >
                     {q.isEligibilityKO ? (
-                      <XCircle size={15} className="text-red-500 flex-shrink-0 mt-0.5" />
+                      <XCircle size={15} className="text-red-500 shrink-0 mt-0.5" />
                     ) : q.status === 'ok' ? (
-                      <CheckCircle size={15} className="text-emerald-500 flex-shrink-0 mt-0.5" />
+                      <CheckCircle size={15} className="text-emerald-500 shrink-0 mt-0.5" />
                     ) : (
-                      <AlertTriangle size={15} className="text-amber-500 flex-shrink-0 mt-0.5" />
+                      <AlertTriangle size={15} className="text-amber-500 shrink-0 mt-0.5" />
                     )}
                     <div className="flex-1 min-w-0">
                       <p className="text-xs text-slate-700 leading-snug truncate">{q.label}</p>
                     </div>
                     {q.isEligibilityKO && (
-                      <span className="text-xs bg-red-100 text-red-600 px-1.5 py-0.5 rounded font-bold flex-shrink-0">KO</span>
+                      <span className="text-xs bg-red-100 text-red-600 px-1.5 py-0.5 rounded font-bold shrink-0">KO</span>
                     )}
                   </div>
                 ))}
@@ -352,10 +352,10 @@ export function DossierDetail() {
           </div>
 
           {/* Validate button — sticky bottom */}
-          <div className="border-t border-slate-200 p-4 flex-shrink-0 space-y-2">
+          <div className="border-t border-slate-200 p-4 shrink-0 space-y-2">
             {hasKO && (
               <div className="flex items-center gap-2 bg-red-50 border border-red-100 rounded-lg px-3 py-2 mb-2">
-                <XCircle size={13} className="text-red-500 flex-shrink-0" />
+                <XCircle size={13} className="text-red-500 shrink-0" />
                 <p className="text-xs text-red-600">Point bloquant détecté</p>
               </div>
             )}
@@ -393,7 +393,7 @@ export function DossierDetail() {
       {viewerDoc && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-2xl flex flex-col w-full max-w-4xl" style={{ height: '90vh' }}>
-            <div className="flex items-center justify-between px-5 py-3 border-b border-slate-200 flex-shrink-0">
+            <div className="flex items-center justify-between px-5 py-3 border-b border-slate-200 shrink-0">
               <div>
                 <p className="text-sm font-semibold text-slate-800">{viewerDoc.nom}</p>
                 <p className="text-xs text-slate-400">{viewerDoc.file_size} · {viewerDoc.content_type}</p>
