@@ -42,3 +42,11 @@ async def update_workflow(workflow_id: str, payload: WorkflowUpdate):
 async def create_workflow(workflow: Workflow):
     await workflow.insert()
     return _serialize(workflow)
+
+
+@router.delete("/{workflow_id}", status_code=204)
+async def delete_workflow(workflow_id: str):
+    workflow = await Workflow.get(workflow_id)
+    if not workflow:
+        raise HTTPException(status_code=404, detail="Workflow introuvable")
+    await workflow.delete()

@@ -1,10 +1,66 @@
 import { useState, useRef } from 'react';
 import { useParams } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, Copy, Check, Code2, Paperclip, X } from 'lucide-react';
+import { Copy, Check, Code2, Paperclip, X } from 'lucide-react';
 import { api } from '../lib/api';
 import { useApi } from '../lib/useApi';
 import { LoadingSpinner } from '../components/ui/LoadingSpinner';
-import type { FormPage } from '../lib/api';
+import type { FormBlock, FormCondition } from '../lib/api';
+
+// ── Helpers ─────────────────────────────────────────────────────────────────
+
+function evaluateCondition(condition: FormCondition, values: Record<string, string>): boolean {
+  const fieldValue = values[condition.field_id] ?? '';
+  const condValue = condition.value;
+  switch (condition.operator) {
+    case 'equals': return fieldValue.toLowerCase() === condValue.toLowerCase();
+    case 'not_equals': return fieldValue.toLowerCase() !== condValue.toLowerCase();
+    case 'contains': return fieldValue.toLowerCase().includes(condValue.toLowerCase());
+    case 'greater_than': {
+      const n = parseFloat(fieldValue); const c = parseFloat(condValue);
+      return !isNaN(n) && !isNaN(c) && n > c;
+    }
+    case 'greater_or_equal': {
+      const n = parseFloat(fieldValue); const c = parseFloat(condValue);
+      return !isNaN(n) && !isNaN(c) && n >= c;
+    }
+    case 'less_than': {
+      const n = parseFloat(fieldValue); const c = parseFloat(condValue);
+      return !isNaN(n) && !isNaN(c) && n < c;
+    }
+    case 'less_or_equal': {
+      const n = parseFloat(fieldValue); const c = parseFloat(condValue);
+      return !isNaN(n) && !isNaN(c) && n <= c;
+    }
+    default: return true;
+  }
+}
+
+function evaluateConditions(
+  conditions: FormCondition[],
+  logic: string,
+  values: Record<string, string>
+): boolean {
+  if (!conditions.length) return true;
+  return logic === 'OR'
+    ? conditions.some((c) => evaluateCondition(c, values))
+    : conditions.every((c) => evaluateCondition(c, values));
+}
+
+// ── AnimatedContainer ────────────────────────────────────────────────────────
+
+function AnimatedContainer({ visible, children }: { visible: boolean; children: React.ReactNode }) {
+  return (
+    <div
+      className={`overflow-hidden transition-all duration-300 ease-in-out ${
+        visible ? 'max-h-500 opacity-100' : 'max-h-0 opacity-0 mt-0!'
+      }`}
+    >
+      <div className={`transition-transform duration-300 ${visible ? 'translate-y-0' : '-translate-y-2'}`}>
+        {children}
+      </div>
+    </div>
+  );
+}
 
 // ── FileUploadField ─────────────────────────────────────────────────────────
 
@@ -62,16 +118,22 @@ function FileUploadField() {
   );
 }
 
-// ── Field renderer ──────────────────────────────────────────────────────────
+// ── FieldInput ──────────────────────────────────────────────────────────────
 
-function FieldInput({ block }: { block: FormPage['blocks'][number] }) {
+function FieldInput({
+  block, value, onChange,
+}: {
+  block: FormBlock;
+  value: string;
+  onChange: (v: string) => void;
+}) {
   const base = 'w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white';
 
   if (block.type === 'header') {
     return <h2 className="text-lg font-bold text-slate-800 pt-2">{block.label || 'Titre de section'}</h2>;
   }
   if (block.type === 'text') {
-    return <p className="text-sm text-slate-500 italic">{block.label || 'Texte d\'explication'}</p>;
+    return <p className="text-sm text-slate-500 italic">{block.label || "Texte d'explication"}</p>;
   }
 
   return (
@@ -82,35 +144,41 @@ function FieldInput({ block }: { block: FormPage['blocks'][number] }) {
       </label>
 
       {block.type === 'short_answer' && (
-        <input type="text" placeholder="Votre réponse" className={base} />
+        <input type="text" placeholder="Votre réponse" value={value} onChange={(e) => onChange(e.target.value)} className={base} />
       )}
       {block.type === 'long_answer' && (
-        <textarea rows={4} placeholder="Votre réponse" className={`${base} resize-none`} />
+        <textarea rows={4} placeholder="Votre réponse" value={value} onChange={(e) => onChange(e.target.value)} className={`${base} resize-none`} />
       )}
       {block.type === 'number' && (
-        <input type="number" placeholder="0" className={`${base} w-40`} />
+        <input type="number" placeholder="0" value={value} onChange={(e) => onChange(e.target.value)} className={`${base} w-40`} />
       )}
       {block.type === 'email' && (
-        <input type="email" placeholder="exemple@email.fr" className={base} />
+        <input type="email" placeholder="exemple@email.fr" value={value} onChange={(e) => onChange(e.target.value)} className={base} />
       )}
       {block.type === 'phone' && (
-        <input type="tel" placeholder="06 XX XX XX XX" className={`${base} w-52`} />
+        <input type="tel" placeholder="06 XX XX XX XX" value={value} onChange={(e) => onChange(e.target.value)} className={`${base} w-52`} />
       )}
       {block.type === 'date' && (
-        <input type="date" className={`${base} w-48`} />
+        <input type="date" value={value} onChange={(e) => onChange(e.target.value)} className={`${base} w-48`} />
       )}
       {block.type === 'multiple_choice' && (
         <div className="space-y-2">
           {(block.options?.length ? block.options : ['Option 1', 'Option 2', 'Option 3']).map((opt, i) => (
             <label key={i} className="flex items-center gap-2.5 cursor-pointer">
-              <input type="radio" name={block.id} className="accent-blue-600" />
+              <input
+                type="radio"
+                name={block.id}
+                checked={value === opt}
+                onChange={() => onChange(opt)}
+                className="accent-blue-600"
+              />
               <span className="text-sm text-slate-700">{opt}</span>
             </label>
           ))}
         </div>
       )}
       {block.type === 'dropdown' && (
-        <select className={base}>
+        <select value={value} onChange={(e) => onChange(e.target.value)} className={base}>
           <option value="">Sélectionner…</option>
           {(block.options?.length ? block.options : ['Option 1', 'Option 2', 'Option 3']).map((opt, i) => (
             <option key={i} value={opt}>{opt}</option>
@@ -136,17 +204,65 @@ function FieldInput({ block }: { block: FormPage['blocks'][number] }) {
       )}
       {block.type === 'eligibility' && (
         <div className="flex gap-3">
-          <label className="flex-1 border border-emerald-200 rounded-lg py-2.5 flex items-center justify-center gap-2 cursor-pointer hover:bg-emerald-50 transition-colors">
-            <input type="radio" name={block.id} className="accent-emerald-600" />
+          <label className={`flex-1 border rounded-lg py-2.5 flex items-center justify-center gap-2 cursor-pointer transition-colors ${
+            value === 'Oui' ? 'border-emerald-400 bg-emerald-50' : 'border-emerald-200 hover:bg-emerald-50'
+          }`}>
+            <input
+              type="radio"
+              name={block.id}
+              checked={value === 'Oui'}
+              onChange={() => onChange('Oui')}
+              className="accent-emerald-600"
+            />
             <span className="text-sm font-medium text-emerald-700">Oui</span>
           </label>
-          <label className="flex-1 border border-red-200 rounded-lg py-2.5 flex items-center justify-center gap-2 cursor-pointer hover:bg-red-50 transition-colors">
-            <input type="radio" name={block.id} className="accent-red-600" />
+          <label className={`flex-1 border rounded-lg py-2.5 flex items-center justify-center gap-2 cursor-pointer transition-colors ${
+            value === 'Non' ? 'border-red-400 bg-red-50' : 'border-red-200 hover:bg-red-50'
+          }`}>
+            <input
+              type="radio"
+              name={block.id}
+              checked={value === 'Non'}
+              onChange={() => onChange('Non')}
+              className="accent-red-600"
+            />
             <span className="text-sm font-medium text-red-700">Non</span>
           </label>
         </div>
       )}
     </div>
+  );
+}
+
+// ── renderItem ───────────────────────────────────────────────────────────────
+
+function renderItem(
+  block: FormBlock,
+  values: Record<string, string>,
+  onChange: (id: string, v: string) => void
+): React.ReactNode {
+  if (block.type === 'container') {
+    const visible = evaluateConditions(block.conditions ?? [], block.conditionLogic ?? 'AND', values);
+    return (
+      <AnimatedContainer key={block.id} visible={visible}>
+        <div className="rounded-xl border border-blue-100 bg-blue-50/20 px-6 py-5 space-y-5">
+          {block.label && (
+            <h3 className="text-sm font-semibold text-slate-700 pb-2 border-b border-blue-100">
+              {block.label}
+            </h3>
+          )}
+          {(block.blocks ?? []).map((inner) => renderItem(inner, values, onChange))}
+        </div>
+      </AnimatedContainer>
+    );
+  }
+  return (
+    <FieldInput
+      key={block.id}
+      block={block}
+      value={values[block.id] ?? ''}
+      onChange={(v) => onChange(block.id, v)}
+    />
   );
 }
 
@@ -189,12 +305,16 @@ function EmbedSnippet({ workflowId }: { workflowId: string }) {
 
 export function FormPreview() {
   const { workflowId } = useParams<{ workflowId: string }>();
-  const [currentPage, setCurrentPage] = useState(0);
+  const [values, setValues] = useState<Record<string, string>>({});
 
   const { data: workflow, loading, error } = useApi(
     () => api.getWorkflow(workflowId!),
     [workflowId]
   );
+
+  const handleChange = (id: string, value: string) => {
+    setValues((prev) => ({ ...prev, [id]: value }));
+  };
 
   if (loading) {
     return (
@@ -212,9 +332,9 @@ export function FormPreview() {
     );
   }
 
-  const pages: FormPage[] = workflow.formulaire_demande ?? [];
+  const blocks: FormBlock[] = workflow.formulaire_demande?.[0]?.blocks ?? [];
 
-  if (pages.length === 0) {
+  if (blocks.length === 0) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center">
         <div className="text-center">
@@ -225,72 +345,28 @@ export function FormPreview() {
     );
   }
 
-  const page = pages[currentPage];
-  const isFirst = currentPage === 0;
-  const isLast = currentPage === pages.length - 1;
-
   return (
     <div className="min-h-screen bg-linear-to-br from-slate-50 to-blue-50/30 py-10 px-4">
       <div className="max-w-xl mx-auto">
 
         {/* Header card */}
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm px-8 py-6 mb-4">
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm px-8 py-6 mb-6">
           <h1 className="text-xl font-bold text-slate-800">{workflow.nom}</h1>
           {workflow.description && (
             <p className="text-sm text-slate-500 mt-1">{workflow.description}</p>
           )}
-          {pages.length > 1 && (
-            <div className="mt-4 flex items-center gap-2">
-              {pages.map((_, i) => (
-                <div
-                  key={i}
-                  className={`h-1.5 rounded-full transition-all ${
-                    i === currentPage ? 'bg-blue-600 flex-1' : 'bg-slate-200 w-6'
-                  }`}
-                />
-              ))}
-            </div>
-          )}
         </div>
 
-        {/* Page card */}
+        {/* Form card */}
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm px-8 py-6">
-          {pages.length > 1 && (
-            <p className="text-xs font-semibold text-blue-600 uppercase tracking-wide mb-4">
-              {page.title}
-            </p>
-          )}
-
           <div className="space-y-5">
-            {page.blocks.map((block) => (
-              <FieldInput key={block.id} block={block} />
-            ))}
+            {blocks.map((block) => renderItem(block, values, handleChange))}
           </div>
 
-          {/* Navigation */}
-          <div className="flex items-center justify-between mt-8 pt-5 border-t border-slate-100">
-            <button
-              onClick={() => setCurrentPage((p) => p - 1)}
-              disabled={isFirst}
-              className="flex items-center gap-1.5 px-4 py-2 text-sm text-slate-600 hover:text-slate-800 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-            >
-              <ChevronLeft size={16} />
-              Précédent
+          <div className="mt-8 pt-5 border-t border-slate-100 flex justify-end">
+            <button className="flex items-center gap-2 bg-blue-600 text-white px-6 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors">
+              Soumettre
             </button>
-
-            {isLast ? (
-              <button className="flex items-center gap-2 bg-blue-600 text-white px-6 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors">
-                Soumettre
-              </button>
-            ) : (
-              <button
-                onClick={() => setCurrentPage((p) => p + 1)}
-                className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
-              >
-                Suivant
-                <ChevronRight size={16} />
-              </button>
-            )}
           </div>
         </div>
 

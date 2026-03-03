@@ -36,13 +36,25 @@ class AIConfig(BaseModel):
     prompt_systeme: str = ""
 
 
+class FormCondition(BaseModel):
+    field_id: str
+    operator: str  # equals | not_equals | greater_than | less_than
+    value: str
+
+
 class FormBlock(BaseModel):
     id: str
     type: str
-    label: str
+    label: str = ""
     required: bool = True
     eligibility: Optional[bool] = None
     options: Optional[list[str]] = None
+    conditions: Optional[list[FormCondition]] = None
+    condition_logic: str = "AND"
+    blocks: Optional[list['FormBlock']] = None  # for container type
+
+
+FormBlock.model_rebuild()
 
 
 class FormPage(BaseModel):
