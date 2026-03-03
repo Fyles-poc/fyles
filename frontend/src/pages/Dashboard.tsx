@@ -97,7 +97,7 @@ export function Dashboard() {
               const Icon = activityIcon[item.icon] ?? Plus;
               return (
                 <div key={item.id} className="flex items-start gap-3">
-                  <div className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 ${activityColor[item.icon] ?? activityColor.plus}`}>
+                  <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 ${activityColor[item.icon] ?? activityColor.plus}`}>
                     <Icon size={13} />
                   </div>
                   <div className="flex-1 min-w-0">
@@ -154,7 +154,7 @@ export function Dashboard() {
       {stats.signales_ia > 0 && (
         <div className="bg-purple-50 border border-purple-200 rounded-xl p-4">
           <div className="flex items-start gap-3">
-            <Bell size={18} className="text-purple-600 mt-0.5 flex-shrink-0" />
+            <Bell size={18} className="text-purple-600 mt-0.5 shrink-0" />
             <div>
               <p className="text-sm font-medium text-purple-800">
                 {stats.signales_ia} dossier(s) signalé(s) par l'IA

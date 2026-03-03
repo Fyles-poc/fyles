@@ -35,7 +35,7 @@ export function WorkflowsList() {
               onClick={() => navigate(`/workflows/${wf.id}`)}>
               <div className="flex items-start justify-between">
                 <div className="flex items-start gap-4">
-                  <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                  <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center shrink-0">
                     <GitBranch size={18} className="text-blue-600" />
                   </div>
                   <div>

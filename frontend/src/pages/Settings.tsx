@@ -93,7 +93,7 @@ export function Settings() {
   return (
     <div className="flex h-screen overflow-hidden">
       {/* Settings sidebar */}
-      <div className="w-56 border-r border-slate-200 bg-white flex-shrink-0">
+      <div className="w-56 border-r border-slate-200 bg-white shrink-0">
         <div className="px-4 py-4 border-b border-slate-100">
           <h1 className="text-base font-bold text-slate-800">Paramètres</h1>
         </div>
@@ -188,7 +188,7 @@ export function Settings() {
                     <tr key={user.id} className="border-b border-slate-50 hover:bg-slate-50 transition-colors">
                       <td className="px-5 py-3">
                         <div className="flex items-center gap-2.5">
-                          <div className="w-7 h-7 rounded-full bg-blue-500 flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
+                          <div className="w-7 h-7 rounded-full bg-blue-500 flex items-center justify-center text-white text-xs font-bold shrink-0">
                             {user.prenom[0]}{user.nom[0]}
                           </div>
                           <span className="font-medium text-slate-800">{user.prenom} {user.nom}</span>
@@ -226,7 +226,7 @@ export function Settings() {
                 { role: 'instructeur', label: 'Instructeur', desc: 'Peut instruire et valider les dossiers qui lui sont assignés.' },
               ].map((r) => (
                 <div key={r.role} className="flex items-start gap-3">
-                  <span className={`text-xs px-2.5 py-1 rounded-full font-medium flex-shrink-0 ${roleColors[r.role]}`}>
+                  <span className={`text-xs px-2.5 py-1 rounded-full font-medium shrink-0 ${roleColors[r.role]}`}>
                     {r.label}
                   </span>
                   <p className="text-xs text-slate-500">{r.desc}</p>
@@ -321,7 +321,7 @@ export function Settings() {
               ))}
             </div>
             <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 flex items-start gap-2">
-              <Shield size={14} className="text-blue-600 flex-shrink-0 mt-0.5" />
+              <Shield size={14} className="text-blue-600 shrink-0 mt-0.5" />
               <p className="text-xs text-blue-700">
                 La suppression automatique est effectuée chaque nuit. Les données supprimées ne peuvent pas être récupérées.
               </p>
