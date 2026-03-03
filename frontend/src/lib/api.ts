@@ -54,7 +54,8 @@ export interface FormCondition {
 export interface FormBlock {
   id: string; type: string; label: string; required: boolean;
   eligibility?: boolean; options?: string[];
-  condition?: FormCondition;
+  conditions?: FormCondition[];
+  conditionLogic?: 'AND' | 'OR';
   blocks?: FormBlock[];
 }
 
