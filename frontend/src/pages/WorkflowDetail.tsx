@@ -5,7 +5,7 @@ import {
   FileText, GitBranch, Save, GripVertical, ExternalLink,
   Type, AlignLeft, AlignJustify, List, ChevronDownSquare,
   CheckSquare, Hash, Mail, Phone, Calendar,
-  Upload, Files, Heading1, X, ShieldAlert, Search,
+  Upload, Files, Heading1, X, ShieldAlert, Search, Layers,
 } from 'lucide-react';
 import { api } from '../lib/api';
 import { useApi } from '../lib/useApi';
@@ -20,7 +20,14 @@ type FieldType =
   | 'short_answer' | 'long_answer' | 'number' | 'email' | 'phone' | 'date'
   | 'multiple_choice' | 'dropdown' | 'multiselect'
   | 'file_upload' | 'multifile_upload'
-  | 'eligibility';
+  | 'eligibility'
+  | 'container';
+
+interface FormCondition {
+  field_id: string;
+  operator: string;
+  value: string;
+}
 
 interface FormBlock {
   id: string;
@@ -29,12 +36,8 @@ interface FormBlock {
   required: boolean;
   eligibility?: boolean;
   options?: string[];
-}
-
-interface FormPage {
-  id: string;
-  title: string;
-  blocks: FormBlock[];
+  condition?: FormCondition;
+  blocks?: FormBlock[];
 }
 
 // ── Field meta ─────────────────────────────────────────────────────────────
@@ -79,6 +82,44 @@ const INSTRUCTION_EXTRA: { type: FieldType; label: string; icon: React.ElementTy
   type: 'eligibility', label: 'Éligibilité (KO si Non)', icon: ShieldAlert,
 };
 
+const OPERATOR_LABELS: Record<string, string> = {
+  equals: '=',
+  not_equals: '≠',
+  greater_than: '>',
+  greater_or_equal: '≥',
+  less_than: '<',
+  less_or_equal: '≤',
+  contains: 'contient',
+};
+
+const NUMBER_FIELD_TYPES = new Set(['number', 'date']);
+const TEXT_FIELD_TYPES = new Set(['short_answer', 'long_answer', 'email', 'phone']);
+
+function getOperators(type: string): { value: string; label: string }[] {
+  if (NUMBER_FIELD_TYPES.has(type)) {
+    return [
+      { value: 'equals', label: '= — égal à' },
+      { value: 'not_equals', label: '≠ — différent de' },
+      { value: 'greater_than', label: '> — supérieur à' },
+      { value: 'greater_or_equal', label: '≥ — supérieur ou égal à' },
+      { value: 'less_than', label: '< — inférieur à' },
+      { value: 'less_or_equal', label: '≤ — inférieur ou égal à' },
+    ];
+  }
+  if (TEXT_FIELD_TYPES.has(type)) {
+    return [
+      { value: 'equals', label: '= — est égal à' },
+      { value: 'not_equals', label: '≠ — est différent de' },
+      { value: 'contains', label: 'contient' },
+    ];
+  }
+  // eligibility, multiple_choice, dropdown, multiselect
+  return [
+    { value: 'equals', label: '= — est égal à' },
+    { value: 'not_equals', label: '≠ — est différent de' },
+  ];
+}
+
 const fieldMeta = (type: FieldType): { label: string; icon: React.ElementType; color: string } => {
   const map: Record<FieldType, { label: string; icon: React.ElementType; color: string }> = {
     header: { label: 'Titre', icon: Heading1, color: 'bg-slate-100 text-slate-600' },
@@ -95,9 +136,300 @@ const fieldMeta = (type: FieldType): { label: string; icon: React.ElementType; c
     file_upload: { label: 'Fichier', icon: Upload, color: 'bg-amber-50 text-amber-600' },
     multifile_upload: { label: 'Fichiers multiples', icon: Files, color: 'bg-amber-50 text-amber-600' },
     eligibility: { label: 'Éligibilité', icon: ShieldAlert, color: 'bg-red-50 text-red-600' },
+    container: { label: 'Container', icon: Layers, color: 'bg-blue-50 text-blue-600' },
   };
   return map[type];
 };
+
+// ── Helpers ─────────────────────────────────────────────────────────────────
+
+function collectFields(blocks: FormBlock[]): FormBlock[] {
+  return blocks
+    .flatMap((b) =>
+      b.type === 'container' && b.blocks ? collectFields(b.blocks) : [b]
+    )
+    .filter((b) => b.type !== 'header' && b.type !== 'text' && b.type !== 'container');
+}
+
+function updateInList(list: FormBlock[], id: string, patch: Partial<FormBlock>): FormBlock[] {
+  return list.map((b) => {
+    if (b.id === id) return { ...b, ...patch };
+    if (b.type === 'container' && b.blocks)
+      return { ...b, blocks: updateInList(b.blocks, id, patch) };
+    return b;
+  });
+}
+
+function deleteFromList(list: FormBlock[], id: string): FormBlock[] {
+  return list
+    .filter((b) => b.id !== id)
+    .map((b) =>
+      b.type === 'container' && b.blocks
+        ? { ...b, blocks: deleteFromList(b.blocks, id) }
+        : b
+    );
+}
+
+function addToContainer(list: FormBlock[], containerId: string, newBlock: FormBlock): FormBlock[] {
+  return list.map((b) => {
+    if (b.id === containerId) return { ...b, blocks: [...(b.blocks ?? []), newBlock] };
+    if (b.type === 'container' && b.blocks)
+      return { ...b, blocks: addToContainer(b.blocks, containerId, newBlock) };
+    return b;
+  });
+}
+
+// ── AddFieldMenu ────────────────────────────────────────────────────────────
+
+function AddFieldMenu({
+  isInstruction,
+  onAdd,
+  small,
+}: {
+  isInstruction: boolean;
+  onAdd: (type: FieldType) => void;
+  small?: boolean;
+}) {
+  const [showMenu, setShowMenu] = useState(false);
+  const [search, setSearch] = useState('');
+
+  const groups = isInstruction
+    ? [...FIELD_GROUPS, { label: 'Instruction', fields: [INSTRUCTION_EXTRA] }]
+    : FIELD_GROUPS;
+
+  const add = (type: FieldType) => {
+    onAdd(type);
+    setShowMenu(false);
+    setSearch('');
+  };
+
+  return (
+    <>
+      <button
+        onClick={() => setShowMenu(true)}
+        className={
+          small
+            ? 'flex items-center gap-1.5 text-xs text-blue-600 hover:text-blue-700 px-3 py-1.5 border border-dashed border-blue-200 rounded-lg hover:border-blue-400 hover:bg-blue-50 transition-all'
+            : 'flex items-center gap-2 text-sm text-blue-600 font-medium hover:text-blue-700 px-4 py-2.5 border-2 border-dashed border-blue-200 rounded-xl w-full justify-center hover:border-blue-400 hover:bg-blue-50 transition-all'
+        }
+      >
+        <Plus size={small ? 12 : 16} />
+        Ajouter un champ
+      </button>
+
+      {showMenu && (
+        <div
+          className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm flex items-center justify-center"
+          onClick={() => { setShowMenu(false); setSearch(''); }}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-2xl w-80 overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-5 pt-5 pb-4 border-b border-slate-100">
+              <div className="flex items-center justify-between mb-1">
+                <h3 className="text-base font-semibold text-slate-800">Ajouter un champ</h3>
+                <button
+                  onClick={() => { setShowMenu(false); setSearch(''); }}
+                  className="p-1 hover:bg-slate-100 rounded-lg transition-colors"
+                >
+                  <X size={16} className="text-slate-400" />
+                </button>
+              </div>
+              <p className="text-xs text-slate-500 mb-3">Sélectionnez le type de champ à ajouter</p>
+              <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+                <Search size={13} className="text-slate-400 shrink-0" />
+                <input
+                  type="text"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Rechercher un champ..."
+                  className="flex-1 text-sm bg-transparent outline-none text-slate-700 placeholder-slate-400"
+                  autoFocus
+                />
+                {search && (
+                  <button onClick={() => setSearch('')}>
+                    <X size={12} className="text-slate-400 hover:text-slate-600" />
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="py-2 overflow-y-auto max-h-96">
+              {groups.map((group) => {
+                const filtered = group.fields.filter(({ label }) =>
+                  !search || label.toLowerCase().includes(search.toLowerCase())
+                );
+                if (filtered.length === 0) return null;
+                return (
+                  <div key={group.label}>
+                    <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide px-5 pt-3 pb-1">
+                      {group.label}
+                    </p>
+                    {filtered.map(({ type, label, icon: Icon }) => {
+                      const meta = fieldMeta(type);
+                      return (
+                        <button
+                          key={type}
+                          onClick={() => add(type)}
+                          className="flex items-center gap-3 w-full px-5 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors text-left"
+                        >
+                          <span className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${meta.color}`}>
+                            <Icon size={14} />
+                          </span>
+                          {label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                );
+              })}
+              {search &&
+                groups.every((g) =>
+                  g.fields.every(({ label }) => !label.toLowerCase().includes(search.toLowerCase()))
+                ) && (
+                  <p className="text-xs text-slate-400 text-center py-6 px-4">
+                    Aucun champ trouvé pour « {search} »
+                  </p>
+                )}
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+// ── ConditionEditor ─────────────────────────────────────────────────────────
+
+function ConditionEditor({
+  condition,
+  allFields,
+  onSave,
+  onRemove,
+  onClose,
+}: {
+  condition?: FormCondition;
+  allFields: FormBlock[];
+  onSave: (c: FormCondition) => void;
+  onRemove: () => void;
+  onClose: () => void;
+}) {
+  const [fieldId, setFieldId] = useState(condition?.field_id ?? '');
+  const [operator, setOperator] = useState(condition?.operator ?? 'equals');
+  const [value, setValue] = useState(condition?.value ?? '');
+
+  const selectedField = allFields.find((f) => f.id === fieldId);
+  const operators = getOperators(selectedField?.type ?? '');
+
+  const handleFieldChange = (newId: string) => {
+    setFieldId(newId);
+    const newField = allFields.find((f) => f.id === newId);
+    const newOps = getOperators(newField?.type ?? '');
+    if (newOps.length > 0 && !newOps.find((op) => op.value === operator)) {
+      setOperator(newOps[0].value);
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-2xl shadow-2xl w-96 p-6"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <div className="w-7 h-7 rounded-lg bg-violet-100 text-violet-600 flex items-center justify-center">
+              <GitBranch size={14} />
+            </div>
+            <h3 className="text-base font-semibold text-slate-800">Condition d'affichage</h3>
+          </div>
+          <button onClick={onClose} className="p-1 hover:bg-slate-100 rounded-lg transition-colors">
+            <X size={16} className="text-slate-400" />
+          </button>
+        </div>
+
+        <p className="text-xs text-slate-500 mb-4 bg-slate-50 px-3 py-2 rounded-lg">
+          Ce container s'affichera uniquement si la condition ci-dessous est vraie.
+        </p>
+
+        <div className="space-y-3">
+          <div>
+            <label className="text-xs font-medium text-slate-600 block mb-1.5">Champ à évaluer</label>
+            <select
+              value={fieldId}
+              onChange={(e) => handleFieldChange(e.target.value)}
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-violet-500 bg-white"
+            >
+              <option value="">Sélectionner un champ...</option>
+              {allFields.map((f) => (
+                <option key={f.id} value={f.id}>
+                  {f.label || `(${fieldMeta(f.type).label})`}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="text-xs font-medium text-slate-600 block mb-1.5">Opérateur</label>
+            <select
+              value={operator}
+              onChange={(e) => setOperator(e.target.value)}
+              disabled={!fieldId}
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-violet-500 bg-white disabled:opacity-50"
+            >
+              {operators.map((op) => (
+                <option key={op.value} value={op.value}>{op.label}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="text-xs font-medium text-slate-600 block mb-1.5">Valeur</label>
+            <input
+              type="text"
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              placeholder="ex: Oui, Non, 18, Paris..."
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-violet-500"
+            />
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 mt-5">
+          {condition && (
+            <button
+              onClick={() => { onRemove(); onClose(); }}
+              className="text-xs text-red-500 hover:text-red-700 px-3 py-1.5 rounded-lg hover:bg-red-50 transition-colors"
+            >
+              Supprimer la condition
+            </button>
+          )}
+          <div className="flex gap-2 ml-auto">
+            <button
+              onClick={onClose}
+              className="px-4 py-2 text-sm text-slate-600 hover:bg-slate-50 rounded-lg transition-colors"
+            >
+              Annuler
+            </button>
+            <button
+              onClick={() => {
+                if (fieldId) { onSave({ field_id: fieldId, operator, value }); onClose(); }
+              }}
+              disabled={!fieldId}
+              className="px-4 py-2 bg-violet-600 text-white text-sm font-medium rounded-lg hover:bg-violet-700 disabled:opacity-50 transition-colors"
+            >
+              Enregistrer
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // ── BlockCard ──────────────────────────────────────────────────────────────
 
@@ -152,25 +484,20 @@ function BlockCard({
           <span className="ml-auto text-xs text-slate-300">cliquer pour modifier</span>
         </button>
       )}
+
       <div className="flex items-start gap-3 px-4 py-3">
-        {/* Drag handle */}
         <div className="mt-1 cursor-grab text-slate-300 hover:text-slate-500 shrink-0">
           <GripVertical size={16} />
         </div>
-
-        {/* Icon */}
         <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 mt-0.5 ${meta.color}`}>
           <Icon size={14} />
         </div>
 
-        {/* Content */}
         <div className="flex-1 min-w-0">
-          {/* Type badge */}
           <span className={`text-xs px-2 py-0.5 rounded-full font-medium mb-1.5 inline-block ${meta.color}`}>
             {meta.label}
           </span>
 
-          {/* Label input */}
           {block.type === 'header' ? (
             <input
               type="text"
@@ -197,17 +524,10 @@ function BlockCard({
             />
           )}
 
-          {/* Preview input */}
           <div className="mt-2">
-            {block.type === 'short_answer' && (
-              <div className="h-8 bg-slate-50 border border-slate-200 rounded-lg" />
-            )}
-            {block.type === 'long_answer' && (
-              <div className="h-16 bg-slate-50 border border-slate-200 rounded-lg" />
-            )}
-            {block.type === 'number' && (
-              <div className="h-8 w-32 bg-slate-50 border border-slate-200 rounded-lg" />
-            )}
+            {block.type === 'short_answer' && <div className="h-8 bg-slate-50 border border-slate-200 rounded-lg" />}
+            {block.type === 'long_answer' && <div className="h-16 bg-slate-50 border border-slate-200 rounded-lg" />}
+            {block.type === 'number' && <div className="h-8 w-32 bg-slate-50 border border-slate-200 rounded-lg" />}
             {block.type === 'email' && (
               <div className="h-8 bg-slate-50 border border-slate-200 rounded-lg flex items-center px-3">
                 <span className="text-xs text-slate-300">exemple@email.fr</span>
@@ -258,9 +578,8 @@ function BlockCard({
             )}
           </div>
 
-          {/* Footer controls */}
           {block.type !== 'header' && block.type !== 'text' && (
-            <div className="flex items-center gap-4 mt-3 pt-2 border-t border-slate-100">
+            <div className="flex items-center mt-3 pt-2 border-t border-slate-100">
               {isInstruction && block.type !== 'eligibility' && (
                 <label className="flex items-center gap-1.5 cursor-pointer">
                   <input
@@ -272,14 +591,10 @@ function BlockCard({
                   <span className="text-xs text-red-500 font-medium">Éligibilité (KO si Non)</span>
                 </label>
               )}
-              <button className="text-xs text-slate-400 hover:text-slate-600 transition-colors ml-auto">
-                + Ajouter une condition
-              </button>
             </div>
           )}
         </div>
 
-        {/* Delete */}
         <button
           onClick={onDelete}
           className="opacity-0 group-hover:opacity-100 p-1 hover:bg-red-50 rounded-lg transition-all shrink-0"
@@ -291,77 +606,225 @@ function BlockCard({
   );
 }
 
+// ── ContainerCard ──────────────────────────────────────────────────────────
+
+function ContainerCard({
+  container, isInstruction, allFields,
+  onDelete, onLabelChange, onSetCondition,
+  onAddBlock, onDeleteBlock, onUpdateBlock,
+  onDragStart, onDragOver, onDrop,
+}: {
+  container: FormBlock;
+  isInstruction: boolean;
+  allFields: FormBlock[];
+  onDelete: () => void;
+  onLabelChange: (v: string) => void;
+  onSetCondition: (c: FormCondition | undefined) => void;
+  onAddBlock: (type: FieldType) => void;
+  onDeleteBlock: (id: string) => void;
+  onUpdateBlock: (id: string, patch: Partial<FormBlock>) => void;
+  onDragStart: (e: React.DragEvent) => void;
+  onDragOver: (e: React.DragEvent) => void;
+  onDrop: (e: React.DragEvent) => void;
+}) {
+  const [showCondEditor, setShowCondEditor] = useState(false);
+  const innerDragRef = useRef<number | null>(null);
+  const innerBlocks = container.blocks ?? [];
+
+  const handleInnerDrop = (targetIndex: number, e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (innerDragRef.current === null || innerDragRef.current === targetIndex) return;
+    const newBlocks = [...innerBlocks];
+    const [moved] = newBlocks.splice(innerDragRef.current!, 1);
+    newBlocks.splice(targetIndex, 0, moved);
+    onUpdateBlock(container.id, { blocks: newBlocks });
+    innerDragRef.current = null;
+  };
+
+  const cond = container.condition;
+  const condFieldLabel = cond
+    ? allFields.find((f) => f.id === cond.field_id)?.label || 'champ'
+    : '';
+
+  return (
+    <div
+      draggable
+      onDragStart={onDragStart}
+      onDragOver={(e) => { e.preventDefault(); onDragOver(e); }}
+      onDrop={onDrop}
+      className="border-2 border-blue-100 rounded-xl overflow-hidden group bg-white"
+    >
+      {/* Condition badge */}
+      {cond && (
+        <div className="bg-violet-50 border-b border-violet-100 px-4 py-1.5 flex items-center gap-1.5">
+          <GitBranch size={11} className="text-violet-500" />
+          <span className="text-xs text-violet-600 font-medium">
+            Affiché si : {condFieldLabel} {OPERATOR_LABELS[cond.operator] ?? cond.operator} «{cond.value}»
+          </span>
+          <button
+            onClick={() => setShowCondEditor(true)}
+            className="ml-auto text-xs text-violet-500 hover:text-violet-700 transition-colors"
+          >
+            Modifier
+          </button>
+          <button
+            onClick={() => onSetCondition(undefined)}
+            className="p-0.5 hover:bg-violet-100 rounded transition-colors"
+          >
+            <X size={11} className="text-violet-400" />
+          </button>
+        </div>
+      )}
+
+      {/* Header */}
+      <div className="flex items-center gap-3 px-4 py-3 bg-slate-50 border-b border-slate-100">
+        <div className="cursor-grab text-slate-300 hover:text-slate-500 shrink-0">
+          <GripVertical size={16} />
+        </div>
+        <div className="w-7 h-7 rounded-lg bg-blue-100 text-blue-600 flex items-center justify-center shrink-0">
+          <Layers size={14} />
+        </div>
+        <input
+          type="text"
+          value={container.label}
+          onChange={(e) => onLabelChange(e.target.value)}
+          className="flex-1 text-sm font-semibold text-slate-700 bg-transparent border-0 border-b border-dashed border-slate-200 focus:outline-none focus:border-blue-400"
+          placeholder="Nom du groupe / section"
+        />
+        <span className="text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full font-medium shrink-0">
+          {innerBlocks.length} champ{innerBlocks.length !== 1 ? 's' : ''}
+        </span>
+        {!cond && (
+          <button
+            onClick={() => setShowCondEditor(true)}
+            className="flex items-center gap-1 text-xs text-slate-400 hover:text-violet-600 transition-colors shrink-0"
+          >
+            <GitBranch size={12} />
+            Condition
+          </button>
+        )}
+        <button
+          onClick={onDelete}
+          className="opacity-0 group-hover:opacity-100 p-1 hover:bg-red-50 rounded-lg transition-all shrink-0"
+        >
+          <Trash2 size={14} className="text-slate-300 hover:text-red-400" />
+        </button>
+      </div>
+
+      {/* Inner blocks */}
+      <div className="p-4 space-y-2 bg-slate-50/40">
+        {innerBlocks.length === 0 && (
+          <div className="text-center py-4">
+            <p className="text-xs text-slate-400 italic">
+              Container vide — ajoutez un champ ci-dessous
+            </p>
+          </div>
+        )}
+        {innerBlocks.map((block, bi) => (
+          <BlockCard
+            key={block.id}
+            block={block}
+            isInstruction={isInstruction}
+            onDelete={() => onDeleteBlock(block.id)}
+            onLabelChange={(v) => onUpdateBlock(block.id, { label: v })}
+            onToggleRequired={() => onUpdateBlock(block.id, { required: !block.required })}
+            onToggleEligibility={() => onUpdateBlock(block.id, { eligibility: !block.eligibility })}
+            onDragStart={(e) => {
+              e.stopPropagation();
+              innerDragRef.current = bi;
+              e.dataTransfer.effectAllowed = 'move';
+            }}
+            onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+            onDrop={(e) => handleInnerDrop(bi, e)}
+          />
+        ))}
+        <AddFieldMenu isInstruction={isInstruction} onAdd={onAddBlock} small />
+      </div>
+
+      {showCondEditor && (
+        <ConditionEditor
+          condition={cond}
+          allFields={allFields}
+          onSave={(c) => onSetCondition(c)}
+          onRemove={() => onSetCondition(undefined)}
+          onClose={() => setShowCondEditor(false)}
+        />
+      )}
+    </div>
+  );
+}
+
 // ── FormTree ───────────────────────────────────────────────────────────────
 
-function FormTree({ pages, currentPage }: { pages: FormPage[]; currentPage: number }) {
+function FormTree({ blocks }: { blocks: FormBlock[] }) {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
 
-  const toggleCollapse = (pageId: string) => {
+  const toggleCollapse = (id: string) => {
     setCollapsed((prev) => {
       const next = new Set(prev);
-      if (next.has(pageId)) next.delete(pageId);
-      else next.add(pageId);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
       return next;
     });
   };
 
+  const renderBlocks = (items: FormBlock[], depth = 0): React.ReactNode =>
+    items.map((block) => {
+      if (block.type === 'container') {
+        const isCollapsed = collapsed.has(block.id);
+        return (
+          <div key={block.id}>
+            <button
+              onClick={() => toggleCollapse(block.id)}
+              className="w-full flex items-center gap-2 py-1 hover:bg-blue-50 rounded px-1 transition-colors"
+              style={{ paddingLeft: depth * 12 }}
+            >
+              <Layers size={11} className="text-blue-400 shrink-0" />
+              <span className="text-xs text-blue-600 font-semibold truncate flex-1 text-left">
+                {block.label || '(container)'}
+              </span>
+              {block.condition && <GitBranch size={10} className="text-violet-400 shrink-0" />}
+              {isCollapsed
+                ? <ChevronDown size={10} className="text-slate-400 shrink-0" />
+                : <ChevronUp size={10} className="text-slate-400 shrink-0" />}
+            </button>
+            {!isCollapsed && renderBlocks(block.blocks ?? [], depth + 1)}
+          </div>
+        );
+      }
+      const meta = fieldMeta(block.type);
+      const Icon = meta.icon;
+      return (
+        <div
+          key={block.id}
+          className="flex items-center gap-2 py-1 px-1"
+          style={{ paddingLeft: depth * 12 + 4 }}
+        >
+          <Icon size={11} className="text-slate-400 shrink-0" />
+          <span className="text-xs text-slate-600 truncate flex-1">
+            {block.label || '(sans titre)'}
+          </span>
+          {block.type === 'eligibility' && (
+            <span className="text-xs text-red-500 font-bold">KO</span>
+          )}
+          {block.eligibility && block.type !== 'eligibility' && (
+            <ShieldAlert size={10} className="text-red-400 shrink-0" />
+          )}
+        </div>
+      );
+    });
+
   return (
     <div className="h-full flex flex-col border-l border-slate-200 bg-slate-50">
       <div className="px-4 py-3 border-b border-slate-200">
-        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Structure du formulaire</p>
+        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Structure</p>
       </div>
-      <div className="flex-1 overflow-y-auto p-3 space-y-2">
-        {pages.map((page, idx) => {
-          const isCollapsed = collapsed.has(page.id);
-          const isCurrent = idx === currentPage;
-          const meta_list = page.blocks.map((b) => fieldMeta(b.type));
-          return (
-            <div key={page.id} className={`rounded-lg border ${isCurrent ? 'border-blue-200 bg-white' : 'border-slate-200 bg-white'}`}>
-              <button
-                onClick={() => toggleCollapse(page.id)}
-                className="w-full flex items-center justify-between px-3 py-2 text-left"
-              >
-                <div className="flex items-center gap-2">
-                  <FileText size={12} className={isCurrent ? 'text-blue-500' : 'text-slate-400'} />
-                  <span className={`text-xs font-semibold ${isCurrent ? 'text-blue-600' : 'text-slate-600'}`}>
-                    {page.title}
-                  </span>
-                  <span className="text-xs text-slate-400">({page.blocks.length})</span>
-                </div>
-                {isCollapsed
-                  ? <ChevronDown size={12} className="text-slate-400" />
-                  : <ChevronUp size={12} className="text-slate-400" />}
-              </button>
-              {!isCollapsed && page.blocks.length > 0 && (
-                <div className="border-t border-slate-100 px-3 py-2 space-y-1">
-                  {page.blocks.map((block, bi) => {
-                    const m = meta_list[bi];
-                    const Icon = m.icon;
-                    return (
-                      <div key={block.id} className="flex items-center gap-2 py-1">
-                        <Icon size={11} className="text-slate-400 shrink-0" />
-                        <span className="text-xs text-slate-600 truncate flex-1">{block.label || '(sans titre)'}</span>
-                        {block.type === 'eligibility' && (
-                          <span className="text-xs text-red-500 font-bold">KO</span>
-                        )}
-                        {block.eligibility && block.type !== 'eligibility' && (
-                          <ShieldAlert size={10} className="text-red-400 shrink-0" />
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-              {!isCollapsed && page.blocks.length === 0 && (
-                <div className="border-t border-slate-100 px-3 py-2">
-                  <p className="text-xs text-slate-400 italic">Aucun champ</p>
-                </div>
-              )}
-            </div>
-          );
-        })}
-        {pages.length === 0 && (
-          <p className="text-xs text-slate-400 text-center py-4">Aucune page</p>
+      <div className="flex-1 overflow-y-auto p-3">
+        {blocks.length === 0 ? (
+          <p className="text-xs text-slate-400 text-center py-4">Formulaire vide</p>
+        ) : (
+          renderBlocks(blocks)
         )}
       </div>
     </div>
@@ -371,62 +834,45 @@ function FormTree({ pages, currentPage }: { pages: FormPage[]; currentPage: numb
 // ── FormBuilder ────────────────────────────────────────────────────────────
 
 function FormBuilder({
-  pages, currentPage, isInstruction,
-  setPages, setCurrentPage,
+  blocks, isInstruction, setBlocks,
 }: {
-  pages: FormPage[];
-  currentPage: number;
+  blocks: FormBlock[];
   isInstruction: boolean;
-  setPages: React.Dispatch<React.SetStateAction<FormPage[]>>;
-  setCurrentPage: React.Dispatch<React.SetStateAction<number>>;
+  setBlocks: React.Dispatch<React.SetStateAction<FormBlock[]>>;
 }) {
-  const [showAddMenu, setShowAddMenu] = useState(false);
-  const [search, setSearch] = useState('');
   const dragRef = useRef<number | null>(null);
 
-  const page = pages[currentPage];
-
-  const addPage = () => {
-    const newPage: FormPage = {
-      id: `p${crypto.randomUUID()}`,
-      title: `Page ${pages.length + 1}`,
-      blocks: [],
-    };
-    setPages((prev) => [...prev, newPage]);
-    setCurrentPage(pages.length);
-  };
-
-  const addBlock = (type: FieldType) => {
+  const addBlock = (type: FieldType, containerId?: string) => {
     const newBlock: FormBlock = {
       id: `b${crypto.randomUUID()}`,
       type,
       label: '',
-      required: type !== 'header' && type !== 'text',
+      required: type !== 'header' && type !== 'text' && type !== 'container',
     };
-    setPages((prev) =>
-      prev.map((p, i) =>
-        i === currentPage ? { ...p, blocks: [...p.blocks, newBlock] } : p
-      )
-    );
-    setShowAddMenu(false);
+    if (containerId) {
+      setBlocks((prev) => addToContainer(prev, containerId, newBlock));
+    } else {
+      setBlocks((prev) => [...prev, newBlock]);
+    }
   };
 
-  const deleteBlock = (blockId: string) => {
-    setPages((prev) =>
-      prev.map((p, i) =>
-        i === currentPage ? { ...p, blocks: p.blocks.filter((b) => b.id !== blockId) } : p
-      )
-    );
+  const addContainer = () => {
+    const newContainer: FormBlock = {
+      id: `c${crypto.randomUUID()}`,
+      type: 'container',
+      label: '',
+      required: false,
+      blocks: [],
+    };
+    setBlocks((prev) => [...prev, newContainer]);
   };
 
-  const updateBlock = (blockId: string, patch: Partial<FormBlock>) => {
-    setPages((prev) =>
-      prev.map((p, i) =>
-        i === currentPage
-          ? { ...p, blocks: p.blocks.map((b) => (b.id === blockId ? { ...b, ...patch } : b)) }
-          : p
-      )
-    );
+  const deleteBlock = (id: string) => {
+    setBlocks((prev) => deleteFromList(prev, id));
+  };
+
+  const updateBlock = (id: string, patch: Partial<FormBlock>) => {
+    setBlocks((prev) => updateInList(prev, id, patch));
   };
 
   const handleDragStart = (e: React.DragEvent, index: number) => {
@@ -442,178 +888,79 @@ function FormBuilder({
   const handleDrop = (e: React.DragEvent, targetIndex: number) => {
     e.preventDefault();
     if (dragRef.current === null || dragRef.current === targetIndex) return;
-    setPages((prev) =>
-      prev.map((p, i) => {
-        if (i !== currentPage) return p;
-        const blocks = [...p.blocks];
-        const [moved] = blocks.splice(dragRef.current!, 1);
-        blocks.splice(targetIndex, 0, moved);
-        return { ...p, blocks };
-      })
-    );
+    const newBlocks = [...blocks];
+    const [moved] = newBlocks.splice(dragRef.current!, 1);
+    newBlocks.splice(targetIndex, 0, moved);
+    setBlocks(newBlocks);
     dragRef.current = null;
   };
 
-  const groups = isInstruction
-    ? [...FIELD_GROUPS, { label: 'Instruction', fields: [INSTRUCTION_EXTRA] }]
-    : FIELD_GROUPS;
+  const allFields = collectFields(blocks);
 
   return (
     <div className="flex h-full">
       {/* Canvas (70%) */}
       <div className="flex-1 flex flex-col overflow-hidden" style={{ width: '70%' }}>
-        {/* Page tabs */}
-        <div className="flex items-center gap-1 px-5 pt-4 pb-0 border-b border-slate-100 bg-white shrink-0">
-          {pages.map((p, idx) => (
-            <button
-              key={p.id}
-              onClick={() => setCurrentPage(idx)}
-              className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-                idx === currentPage
-                  ? 'border-blue-600 text-blue-600'
-                  : 'border-transparent text-slate-500 hover:text-slate-700'
-              }`}
-            >
-              {p.title}
-            </button>
-          ))}
-          <button
-            onClick={addPage}
-            className="flex items-center gap-1 px-3 py-2 text-xs text-slate-400 hover:text-blue-600 transition-colors border-b-2 border-transparent"
-          >
-            <Plus size={12} />
-          </button>
-        </div>
-
-        {/* Blocks */}
         <div className="flex-1 overflow-y-auto p-5 space-y-3 bg-slate-50">
-          {page?.blocks.length === 0 && (
+          {blocks.length === 0 && (
             <div className="text-center py-16">
               <div className="w-12 h-12 bg-slate-100 rounded-xl flex items-center justify-center mx-auto mb-3">
                 <AlignLeft size={20} className="text-slate-300" />
               </div>
               <p className="text-sm text-slate-400 font-medium">Formulaire vide</p>
-              <p className="text-xs text-slate-400 mt-1">Ajoutez un champ pour commencer</p>
+              <p className="text-xs text-slate-400 mt-1">
+                Ajoutez un champ ou un container pour commencer
+              </p>
             </div>
           )}
-          {page?.blocks.map((block, bi) => (
-            <BlockCard
-              key={block.id}
-              block={block}
-              isInstruction={isInstruction}
-              onDelete={() => deleteBlock(block.id)}
-              onLabelChange={(v) => updateBlock(block.id, { label: v })}
-              onToggleRequired={() => updateBlock(block.id, { required: !block.required })}
-              onToggleEligibility={() => updateBlock(block.id, { eligibility: !block.eligibility })}
-              onDragStart={(e) => handleDragStart(e, bi)}
-              onDragOver={handleDragOver}
-              onDrop={(e) => handleDrop(e, bi)}
-            />
-          ))}
 
-          {/* Add field button */}
-          <div className="relative">
-            <button
-              onClick={() => setShowAddMenu(!showAddMenu)}
-              className="flex items-center gap-2 text-sm text-blue-600 font-medium hover:text-blue-700 px-4 py-2.5 border-2 border-dashed border-blue-200 rounded-xl w-full justify-center hover:border-blue-400 hover:bg-blue-50 transition-all"
-            >
-              <Plus size={16} />
-              Ajouter un champ
-            </button>
+          {blocks.map((block, idx) =>
+            block.type === 'container' ? (
+              <ContainerCard
+                key={block.id}
+                container={block}
+                isInstruction={isInstruction}
+                allFields={allFields}
+                onDelete={() => deleteBlock(block.id)}
+                onLabelChange={(v) => updateBlock(block.id, { label: v })}
+                onSetCondition={(c) => updateBlock(block.id, { condition: c })}
+                onAddBlock={(type) => addBlock(type, block.id)}
+                onDeleteBlock={deleteBlock}
+                onUpdateBlock={updateBlock}
+                onDragStart={(e) => handleDragStart(e, idx)}
+                onDragOver={handleDragOver}
+                onDrop={(e) => handleDrop(e, idx)}
+              />
+            ) : (
+              <BlockCard
+                key={block.id}
+                block={block}
+                isInstruction={isInstruction}
+                onDelete={() => deleteBlock(block.id)}
+                onLabelChange={(v) => updateBlock(block.id, { label: v })}
+                onToggleRequired={() => updateBlock(block.id, { required: !block.required })}
+                onToggleEligibility={() => updateBlock(block.id, { eligibility: !block.eligibility })}
+                onDragStart={(e) => handleDragStart(e, idx)}
+                onDragOver={handleDragOver}
+                onDrop={(e) => handleDrop(e, idx)}
+              />
+            )
+          )}
 
-            {showAddMenu && (
-              <div
-                className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm flex items-center justify-center"
-                onClick={() => { setShowAddMenu(false); setSearch(''); }}
-              >
-                <div
-                  className="bg-white rounded-2xl shadow-2xl w-80 overflow-hidden"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  {/* Header */}
-                  <div className="px-5 pt-5 pb-4 border-b border-slate-100">
-                    <div className="flex items-center justify-between mb-1">
-                      <h3 className="text-base font-semibold text-slate-800">Ajouter un champ</h3>
-                      <button
-                        onClick={() => { setShowAddMenu(false); setSearch(''); }}
-                        className="p-1 hover:bg-slate-100 rounded-lg transition-colors"
-                      >
-                        <X size={16} className="text-slate-400" />
-                      </button>
-                    </div>
-                    <p className="text-xs text-slate-500 mb-3">Sélectionnez le type de champ à ajouter au formulaire</p>
-                    {/* Search */}
-                    <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
-                      <Search size={13} className="text-slate-400 shrink-0" />
-                      <input
-                        type="text"
-                        value={search}
-                        onChange={(e) => setSearch(e.target.value)}
-                        placeholder="Rechercher un champ..."
-                        className="flex-1 text-sm bg-transparent outline-none text-slate-700 placeholder-slate-400"
-                        autoFocus
-                      />
-                      {search && (
-                        <button onClick={() => setSearch('')}>
-                          <X size={12} className="text-slate-400 hover:text-slate-600" />
-                        </button>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Groups */}
-                  <div className="py-2 overflow-y-auto max-h-96">
-                    {groups.map((group) => {
-                      const filtered = group.fields.filter(({ label }) =>
-                        !search || label.toLowerCase().includes(search.toLowerCase())
-                      );
-                      if (filtered.length === 0) return null;
-                      return (
-                        <div key={group.label}>
-                          <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide px-5 pt-3 pb-1">
-                            {group.label}
-                          </p>
-                          {filtered.map(({ type, label, icon: Icon }) => {
-                            const meta = fieldMeta(type);
-                            return (
-                              <button
-                                key={type}
-                                onClick={() => addBlock(type)}
-                                className="flex items-center gap-3 w-full px-5 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors text-left"
-                              >
-                                <span className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${meta.color}`}>
-                                  <Icon size={14} />
-                                </span>
-                                {label}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      );
-                    })}
-                    {search && groups.every((g) => g.fields.every(({ label }) => !label.toLowerCase().includes(search.toLowerCase()))) && (
-                      <p className="text-xs text-slate-400 text-center py-6 px-4">Aucun champ trouvé pour « {search} »</p>
-                    )}
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Add page */}
+          <AddFieldMenu isInstruction={isInstruction} onAdd={addBlock} />
           <button
-            onClick={addPage}
-            className="flex items-center gap-2 text-xs text-slate-400 hover:text-slate-600 transition-colors mx-auto pt-2"
+            onClick={addContainer}
+            className="flex items-center gap-2 text-sm text-slate-500 hover:text-blue-600 font-medium px-4 py-2.5 border-2 border-dashed border-slate-200 rounded-xl w-full justify-center hover:border-blue-300 hover:bg-blue-50/50 transition-all"
           >
-            <Plus size={12} />
-            Ajouter une page
+            <Layers size={16} />
+            Ajouter un container conditionnel
           </button>
         </div>
       </div>
 
       {/* Tree (30%) */}
       <div className="shrink-0" style={{ width: '30%' }}>
-        <FormTree pages={pages} currentPage={currentPage} />
+        <FormTree blocks={blocks} />
       </div>
     </div>
   );
@@ -626,15 +973,8 @@ export function WorkflowDetail() {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<TabId>('formulaire_demande');
 
-  const [demandePage, setDemandePage] = useState(0);
-  const [demandePages, setDemandePages] = useState<FormPage[]>([
-    { id: 'p1', title: 'Page 1', blocks: [] },
-  ]);
-
-  const [instructionPage, setInstructionPage] = useState(0);
-  const [instructionPages, setInstructionPages] = useState<FormPage[]>([
-    { id: 'p1', title: 'Page 1', blocks: [] },
-  ]);
+  const [demandeBlocks, setDemandeBlocks] = useState<FormBlock[]>([]);
+  const [instructionBlocks, setInstructionBlocks] = useState<FormBlock[]>([]);
 
   const [isSaving, setIsSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saved' | 'error'>('idle');
@@ -646,11 +986,13 @@ export function WorkflowDetail() {
 
   useEffect(() => {
     if (!workflow) return;
-    if (workflow.formulaire_demande?.length > 0) {
-      setDemandePages(workflow.formulaire_demande as unknown as FormPage[]);
+    const demBlocks = workflow.formulaire_demande?.[0]?.blocks;
+    if (demBlocks && demBlocks.length > 0) {
+      setDemandeBlocks(demBlocks as unknown as FormBlock[]);
     }
-    if (workflow.formulaire_instruction?.length > 0) {
-      setInstructionPages(workflow.formulaire_instruction as unknown as FormPage[]);
+    const instBlocks = workflow.formulaire_instruction?.[0]?.blocks;
+    if (instBlocks && instBlocks.length > 0) {
+      setInstructionBlocks(instBlocks as unknown as FormBlock[]);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workflow?.id]);
@@ -660,8 +1002,8 @@ export function WorkflowDetail() {
     setSaveStatus('idle');
     try {
       await api.updateWorkflow(id!, {
-        formulaire_demande: demandePages,
-        formulaire_instruction: instructionPages,
+        formulaire_demande: [{ id: 'main', title: 'Formulaire de demande', blocks: demandeBlocks }],
+        formulaire_instruction: [{ id: 'main', title: "Formulaire d'instruction", blocks: instructionBlocks }],
       });
       setSaveStatus('saved');
       setTimeout(() => setSaveStatus('idle'), 2500);
@@ -752,20 +1094,16 @@ export function WorkflowDetail() {
       <div className="flex-1 overflow-hidden">
         {activeTab === 'formulaire_demande' && (
           <FormBuilder
-            pages={demandePages}
-            currentPage={demandePage}
+            blocks={demandeBlocks}
             isInstruction={false}
-            setPages={setDemandePages}
-            setCurrentPage={setDemandePage}
+            setBlocks={setDemandeBlocks}
           />
         )}
         {activeTab === 'formulaire_instruction' && (
           <FormBuilder
-            pages={instructionPages}
-            currentPage={instructionPage}
+            blocks={instructionBlocks}
             isInstruction={true}
-            setPages={setInstructionPages}
-            setCurrentPage={setInstructionPage}
+            setBlocks={setInstructionBlocks}
           />
         )}
       </div>

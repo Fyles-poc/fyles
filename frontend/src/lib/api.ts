@@ -47,9 +47,15 @@ export interface Dossier {
   recommendation?: AIRecommendation; created_at: string;
 }
 
+export interface FormCondition {
+  field_id: string; operator: string; value: string;
+}
+
 export interface FormBlock {
   id: string; type: string; label: string; required: boolean;
   eligibility?: boolean; options?: string[];
+  condition?: FormCondition;
+  blocks?: FormBlock[];
 }
 
 export interface FormPage {
@@ -137,8 +143,11 @@ export const api = {
   // Workflows
   getWorkflows: () => request<Workflow[]>('/workflows'),
   getWorkflow: (id: string) => request<Workflow>(`/workflows/${id}`),
+  createWorkflow: (payload: { nom: string; description: string; type: string }) =>
+    request<Workflow>('/workflows', { method: 'POST', body: JSON.stringify(payload) }),
   updateWorkflow: (id: string, payload: Partial<Workflow>) =>
     request<Workflow>(`/workflows/${id}`, { method: 'PUT', body: JSON.stringify(payload) }),
+  deleteWorkflow: (id: string) => request<void>(`/workflows/${id}`, { method: 'DELETE' }),
 
   // Settings
   getOrganization: () => request<Organization>('/settings/organization'),
