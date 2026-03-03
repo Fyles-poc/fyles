@@ -42,6 +42,8 @@ class DocumentItem(BaseModel):
     uploaded_at: Optional[str] = None
     file_size: Optional[str] = None
     validation_message: Optional[str] = None
+    minio_key: Optional[str] = None
+    content_type: Optional[str] = None
 
 
 class AIAnalysisResult(BaseModel):

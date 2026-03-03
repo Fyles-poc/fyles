@@ -25,6 +25,8 @@ export interface DocumentItem {
   id: string; nom: string; type: string; statut: DocumentStatus;
   obligatoire: boolean; uploaded_at?: string; file_size?: string;
   validation_message?: string;
+  minio_key?: string;
+  content_type?: string;
 }
 
 export interface AIAnalysisResult {
@@ -116,6 +118,10 @@ export const api = {
     method: 'PATCH',
     body: JSON.stringify(payload),
   }),
+
+  // Documents
+  getDocumentContentUrl: (reference: string, docId: string, download = false) =>
+    `${BASE}/dossiers/${reference}/documents/${docId}/content${download ? '?download=true' : ''}`,
 
   // Workflows
   getWorkflows: () => request<Workflow[]>('/workflows'),

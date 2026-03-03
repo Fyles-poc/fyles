@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, CheckCircle, XCircle, Clock,
   AlertTriangle, ChevronDown, ChevronUp, ThumbsUp, ThumbsDown,
-  MessageSquare, Download, Upload,
+  MessageSquare, Download, Upload, Eye, X,
 } from 'lucide-react';
 import { api } from '../lib/api';
 import { useApi } from '../lib/useApi';
@@ -88,6 +88,7 @@ export function DossierDetail() {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<'completude' | 'regles'>('completude');
   const [selectedDoc, setSelectedDoc] = useState<string | null>(null);
+  const [viewerDoc, setViewerDoc] = useState<DocumentItem | null>(null);
   const [showDecisionModal, setShowDecisionModal] = useState(false);
   const [decision, setDecision] = useState<RecommendationDecision | null>(null);
   const [commentaire, setCommentaire] = useState('');
@@ -176,28 +177,46 @@ export function DossierDetail() {
           </div>
           <div className="flex-1 overflow-y-auto p-3 space-y-1.5">
             {dossier.documents.map((doc) => (
-              <button key={doc.id}
-                onClick={() => setSelectedDoc(selectedDoc === doc.id ? null : doc.id)}
-                className={`w-full flex items-start gap-2.5 p-3 rounded-lg text-left transition-colors ${
-                  selectedDoc === doc.id ? 'bg-blue-50 border border-blue-200' : 'hover:bg-slate-50 border border-transparent'
+              <div key={doc.id}
+                className={`rounded-lg border transition-colors ${
+                  selectedDoc === doc.id ? 'bg-blue-50 border-blue-200' : 'border-transparent hover:bg-slate-50'
                 }`}>
-                <DocumentIcon status={doc.statut} />
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs font-medium text-slate-800 leading-snug">{doc.nom}</p>
-                  <p className={`text-xs mt-0.5 ${
-                    doc.statut === 'valide' ? 'text-emerald-600' :
-                    doc.statut === 'invalide' ? 'text-red-500' :
-                    doc.statut === 'manquant' ? 'text-slate-400' : 'text-amber-500'
-                  }`}>
-                    {doc.statut === 'valide' ? 'Validé' : doc.statut === 'invalide' ? 'Invalide' :
-                     doc.statut === 'manquant' ? 'Manquant' : 'En attente'}
-                  </p>
-                  {doc.file_size && <p className="text-xs text-slate-400">{doc.file_size}</p>}
-                </div>
-                {!doc.obligatoire && (
-                  <span className="text-xs text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded flex-shrink-0">opt.</span>
+                <button
+                  onClick={() => setSelectedDoc(selectedDoc === doc.id ? null : doc.id)}
+                  className="w-full flex items-start gap-2.5 p-3 text-left">
+                  <DocumentIcon status={doc.statut} />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-medium text-slate-800 leading-snug">{doc.nom}</p>
+                    <p className={`text-xs mt-0.5 ${
+                      doc.statut === 'valide' ? 'text-emerald-600' :
+                      doc.statut === 'invalide' ? 'text-red-500' :
+                      doc.statut === 'manquant' ? 'text-slate-400' : 'text-amber-500'
+                    }`}>
+                      {doc.statut === 'valide' ? 'Validé' : doc.statut === 'invalide' ? 'Invalide' :
+                       doc.statut === 'manquant' ? 'Manquant' : 'En attente'}
+                    </p>
+                    {doc.file_size && <p className="text-xs text-slate-400">{doc.file_size}</p>}
+                  </div>
+                  {!doc.obligatoire && (
+                    <span className="text-xs text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded flex-shrink-0">opt.</span>
+                  )}
+                </button>
+                {doc.minio_key && (
+                  <div className="flex gap-1 px-3 pb-2">
+                    <button
+                      onClick={() => setViewerDoc(doc)}
+                      className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 px-2 py-1 rounded hover:bg-blue-50 transition-colors">
+                      <Eye size={11} />Voir
+                    </button>
+                    <a
+                      href={api.getDocumentContentUrl(dossier.reference, doc.id, true)}
+                      download
+                      className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700 px-2 py-1 rounded hover:bg-slate-100 transition-colors">
+                      <Download size={11} />Télécharger
+                    </a>
+                  </div>
                 )}
-              </button>
+              </div>
             ))}
             <div className="border-2 border-dashed border-slate-200 rounded-lg p-3 text-center mt-2">
               <Upload size={14} className="text-slate-300 mx-auto mb-1" />
@@ -356,6 +375,60 @@ export function DossierDetail() {
           </div>
         </div>
       </div>
+
+      {/* Document viewer modal */}
+      {viewerDoc && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl flex flex-col w-full max-w-4xl" style={{ height: '90vh' }}>
+            <div className="flex items-center justify-between px-5 py-3 border-b border-slate-200 flex-shrink-0">
+              <div>
+                <p className="text-sm font-semibold text-slate-800">{viewerDoc.nom}</p>
+                <p className="text-xs text-slate-400">{viewerDoc.file_size} · {viewerDoc.content_type}</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <a
+                  href={api.getDocumentContentUrl(dossier.reference, viewerDoc.id, true)}
+                  download
+                  className="flex items-center gap-1.5 text-xs text-slate-600 border border-slate-200 px-3 py-1.5 rounded-lg hover:bg-slate-50 transition-colors">
+                  <Download size={13} />Télécharger
+                </a>
+                <button
+                  onClick={() => setViewerDoc(null)}
+                  className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors">
+                  <X size={16} className="text-slate-500" />
+                </button>
+              </div>
+            </div>
+            <div className="flex-1 overflow-hidden rounded-b-2xl bg-slate-100">
+              {viewerDoc.content_type?.startsWith('image/') ? (
+                <div className="w-full h-full flex items-center justify-center p-6">
+                  <img
+                    src={api.getDocumentContentUrl(dossier.reference, viewerDoc.id)}
+                    alt={viewerDoc.nom}
+                    className="max-w-full max-h-full object-contain rounded-lg shadow"
+                  />
+                </div>
+              ) : viewerDoc.content_type === 'application/pdf' ? (
+                <iframe
+                  src={api.getDocumentContentUrl(dossier.reference, viewerDoc.id)}
+                  className="w-full h-full"
+                  title={viewerDoc.nom}
+                />
+              ) : (
+                <div className="w-full h-full flex flex-col items-center justify-center gap-3 text-slate-400">
+                  <p className="text-sm">Prévisualisation non disponible pour ce type de fichier.</p>
+                  <a
+                    href={api.getDocumentContentUrl(dossier.reference, viewerDoc.id, true)}
+                    download
+                    className="flex items-center gap-2 text-sm text-blue-600 hover:text-blue-700 font-medium">
+                    <Download size={14} />Télécharger le fichier
+                  </a>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Decision modal */}
       {showDecisionModal && (

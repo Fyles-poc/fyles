@@ -1,9 +1,11 @@
 from datetime import datetime
 from typing import Optional
 from fastapi import APIRouter, HTTPException, Query
-from beanie import PydanticObjectId
+from fastapi.responses import StreamingResponse
 
 from api.models.dossier import Dossier, DossierStatus, DecisionPayload
+from api.config import get_settings
+from api.storage import get_minio_client
 
 router = APIRouter(prefix="/dossiers", tags=["Dossiers"])
 
@@ -32,6 +34,39 @@ async def get_dossier(reference: str):
     if not dossier:
         raise HTTPException(status_code=404, detail=f"Dossier {reference} introuvable")
     return dossier
+
+
+@router.get("/{reference}/documents/{doc_id}/content")
+async def get_document_content(
+    reference: str,
+    doc_id: str,
+    download: bool = Query(False),
+):
+    dossier = await Dossier.find_one(Dossier.reference == reference)
+    if not dossier:
+        raise HTTPException(status_code=404, detail=f"Dossier {reference} introuvable")
+
+    doc = next((d for d in dossier.documents if d.id == doc_id), None)
+    if not doc or not doc.minio_key:
+        raise HTTPException(status_code=404, detail="Document introuvable ou non disponible")
+
+    cfg = get_settings()
+    mc = get_minio_client(cfg)
+
+    try:
+        response = mc.get_object(cfg.minio_bucket, doc.minio_key)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Fichier introuvable dans le stockage")
+
+    content_type = doc.content_type or "application/octet-stream"
+    filename = doc.minio_key.split("/")[-1]
+    disposition = f'attachment; filename="{filename}"' if download else f'inline; filename="{filename}"'
+
+    return StreamingResponse(
+        response,
+        media_type=content_type,
+        headers={"Content-Disposition": disposition},
+    )
 
 
 @router.patch("/{reference}/decision", response_model=Dossier)
