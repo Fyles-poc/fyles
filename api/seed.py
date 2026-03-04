@@ -204,11 +204,11 @@ async def seed():
         document_models=[Dossier, Workflow, User, Organization],
     )
 
-    print("🧹 Nettoyage des collections existantes...")
-    await Dossier.delete_all()
-    await Workflow.delete_all()
-    await User.delete_all()
-    await Organization.delete_all()
+    # ── Skip si données déjà présentes ────────────────────────────────────────
+    if await Workflow.count() > 0:
+        print("⏭  Données déjà présentes, seed ignoré.")
+        client.close()
+        return
 
     # ── Workflows ──────────────────────────────────────────────────────────────
     print("📋 Insertion des workflows...")

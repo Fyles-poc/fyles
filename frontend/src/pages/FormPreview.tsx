@@ -53,8 +53,12 @@ function AnimatedContainer({ visible, children }: { visible: boolean; children: 
 
 // ── FileUploadField ─────────────────────────────────────────────────────────
 
-function FileUploadField() {
-  const [file, setFile] = useState<File | null>(null);
+function FileUploadField({
+  file, onChange,
+}: {
+  file: File | null;
+  onChange: (f: File | null) => void;
+}) {
   const inputRef = useRef<HTMLInputElement>(null);
 
   const formatSize = (bytes: number) => {
@@ -74,13 +78,15 @@ function FileUploadField() {
           <p className="text-xs text-slate-400">{formatSize(file.size)}</p>
         </div>
         <button
+          type="button"
           onClick={() => inputRef.current?.click()}
           className="text-xs text-blue-600 hover:text-blue-700 font-medium px-2 py-1 rounded hover:bg-blue-50 transition-colors"
         >
           Modifier
         </button>
         <button
-          onClick={() => { setFile(null); if (inputRef.current) inputRef.current.value = ''; }}
+          type="button"
+          onClick={() => { onChange(null); if (inputRef.current) inputRef.current.value = ''; }}
           className="p-1 hover:bg-red-50 rounded transition-colors"
         >
           <X size={14} className="text-slate-400 hover:text-red-400" />
@@ -89,7 +95,7 @@ function FileUploadField() {
           ref={inputRef}
           type="file"
           className="hidden"
-          onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+          onChange={(e) => onChange(e.target.files?.[0] ?? null)}
         />
       </div>
     );
@@ -101,7 +107,7 @@ function FileUploadField() {
       <input
         type="file"
         className="hidden"
-        onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+        onChange={(e) => onChange(e.target.files?.[0] ?? null)}
       />
     </label>
   );
@@ -110,11 +116,13 @@ function FileUploadField() {
 // ── FieldInput ──────────────────────────────────────────────────────────────
 
 function FieldInput({
-  block, value, onChange,
+  block, value, onChange, fileValue = null, onFileChange,
 }: {
   block: FormBlock;
   value: string;
   onChange: (v: string) => void;
+  fileValue?: File | null;
+  onFileChange?: (f: File | null) => void;
 }) {
   const base = 'w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white';
 
@@ -184,12 +192,8 @@ function FieldInput({
           ))}
         </div>
       )}
-      {block.type === 'file_upload' && <FileUploadField />}
-      {block.type === 'multifile_upload' && (
-        <label className="border-2 border-dashed border-slate-200 rounded-lg p-6 text-center hover:border-blue-300 transition-colors cursor-pointer block">
-          <p className="text-sm text-slate-400">Cliquez ou déposez des fichiers ici</p>
-          <input type="file" multiple className="hidden" />
-        </label>
+      {block.type === 'file_upload' && (
+        <FileUploadField file={fileValue} onChange={onFileChange ?? (() => {})} />
       )}
       {block.type === 'eligibility' && (
         <div className="flex gap-3">
@@ -228,7 +232,9 @@ function FieldInput({
 function renderItem(
   block: FormBlock,
   values: Record<string, string>,
-  onChange: (id: string, v: string) => void
+  onChange: (id: string, v: string) => void,
+  files: Record<string, File | null>,
+  onFileChange: (id: string, f: File | null) => void,
 ): React.ReactNode {
   if (block.type === 'container') {
     const visible = !block.condition || evaluateCondition(block.condition, values);
@@ -240,7 +246,7 @@ function renderItem(
               {block.label}
             </h3>
           )}
-          {(block.blocks ?? []).map((inner) => renderItem(inner, values, onChange))}
+          {(block.blocks ?? []).map((inner) => renderItem(inner, values, onChange, files, onFileChange))}
         </div>
       </AnimatedContainer>
     );
@@ -251,6 +257,8 @@ function renderItem(
       block={block}
       value={values[block.id] ?? ''}
       onChange={(v) => onChange(block.id, v)}
+      fileValue={files[block.id] ?? null}
+      onFileChange={(f) => onFileChange(block.id, f)}
     />
   );
 }
@@ -295,6 +303,10 @@ function EmbedSnippet({ workflowId }: { workflowId: string }) {
 export function FormPreview() {
   const { workflowId } = useParams<{ workflowId: string }>();
   const [values, setValues] = useState<Record<string, string>>({});
+  const [files, setFiles] = useState<Record<string, File | null>>({});
+  const [submitStatus, setSubmitStatus] = useState<'idle' | 'submitting' | 'success' | 'error'>('idle');
+  const [submitRef, setSubmitRef] = useState('');
+  const [submitError, setSubmitError] = useState('');
 
   const { data: workflow, loading, error } = useApi(
     () => api.getWorkflow(workflowId!),
@@ -303,6 +315,29 @@ export function FormPreview() {
 
   const handleChange = (id: string, value: string) => {
     setValues((prev) => ({ ...prev, [id]: value }));
+  };
+
+  const handleFileChange = (id: string, f: File | null) => {
+    setFiles((prev) => ({ ...prev, [id]: f }));
+  };
+
+  const handleSubmit = async () => {
+    setSubmitStatus('submitting');
+    setSubmitError('');
+    try {
+      const formData = new FormData();
+      formData.append('workflow_id', workflowId!);
+      formData.append('reponses', JSON.stringify(values));
+      for (const [fieldId, file] of Object.entries(files)) {
+        if (file) formData.append(fieldId, file);
+      }
+      const result = await api.submitDossier(formData);
+      setSubmitRef(result.reference);
+      setSubmitStatus('success');
+    } catch (e: unknown) {
+      setSubmitError(e instanceof Error ? e.message : 'Erreur lors de la soumission');
+      setSubmitStatus('error');
+    }
   };
 
   if (loading) {
@@ -334,6 +369,25 @@ export function FormPreview() {
     );
   }
 
+  if (submitStatus === 'success') {
+    return (
+      <div className="min-h-screen bg-linear-to-br from-slate-50 to-blue-50/30 py-10 px-4 flex items-center justify-center">
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm px-8 py-10 max-w-md w-full text-center">
+          <div className="w-14 h-14 rounded-full bg-emerald-50 flex items-center justify-center mx-auto mb-4">
+            <Check size={28} className="text-emerald-500" />
+          </div>
+          <h2 className="text-xl font-bold text-slate-800 mb-2">Dossier soumis !</h2>
+          <p className="text-sm text-slate-500 mb-4">
+            Votre demande a bien été enregistrée. Conservez votre référence de dossier.
+          </p>
+          <div className="bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 font-mono text-base font-semibold text-slate-800">
+            {submitRef}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-linear-to-br from-slate-50 to-blue-50/30 py-10 px-4">
       <div className="max-w-xl mx-auto">
@@ -349,12 +403,22 @@ export function FormPreview() {
         {/* Form card */}
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm px-8 py-6">
           <div className="space-y-5">
-            {blocks.map((block) => renderItem(block, values, handleChange))}
+            {blocks.map((block) => renderItem(block, values, handleChange, files, handleFileChange))}
           </div>
 
+          {submitStatus === 'error' && (
+            <p className="mt-4 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-4 py-3">
+              {submitError}
+            </p>
+          )}
+
           <div className="mt-8 pt-5 border-t border-slate-100 flex justify-end">
-            <button className="flex items-center gap-2 bg-blue-600 text-white px-6 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors">
-              Soumettre
+            <button
+              onClick={handleSubmit}
+              disabled={submitStatus === 'submitting'}
+              className="flex items-center gap-2 bg-blue-600 text-white px-6 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+            >
+              {submitStatus === 'submitting' ? 'Envoi en cours…' : 'Soumettre'}
             </button>
           </div>
         </div>

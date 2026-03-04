@@ -1,11 +1,16 @@
+import io
+import json
+import random
+import string
 from datetime import datetime
 from typing import Optional
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 
-from api.models.dossier import Dossier, DossierStatus, DecisionPayload
+from api.models.dossier import Dossier, DossierStatus, DecisionPayload, Demandeur, DocumentItem, DocumentStatus
+from api.models.workflow import Workflow
 from api.config import get_settings
-from api.storage import get_minio_client
+from api.storage import get_minio_client, ensure_bucket
 
 router = APIRouter(prefix="/dossiers", tags=["Dossiers"])
 
@@ -88,6 +93,70 @@ async def patch_decision(reference: str, payload: DecisionPayload):
 
     await dossier.save()
     return dossier
+
+
+@router.post("/submit", response_model=None, status_code=201)
+async def submit_dossier(request: Request):
+    form = await request.form()
+
+    workflow_id = str(form.get("workflow_id", ""))
+    reponses_str = str(form.get("reponses", "{}"))
+
+    if not workflow_id:
+        raise HTTPException(status_code=422, detail="workflow_id requis")
+
+    try:
+        reponses = json.loads(reponses_str)
+    except Exception:
+        reponses = {}
+
+    workflow = await Workflow.get(workflow_id)
+    if not workflow:
+        raise HTTPException(status_code=404, detail="Workflow introuvable")
+
+    prefix = "".join(c for c in workflow.nom.upper()[:3] if c.isalpha()) or "DOS"
+    date_part = datetime.now().strftime("%y%m%d")
+    rand_part = "".join(random.choices(string.ascii_uppercase + string.digits, k=4))
+    reference = f"{prefix}-{date_part}-{rand_part}"
+
+    documents = []
+    mc = None
+    cfg = None
+    for field_id, field_value in form.multi_items():
+        if not hasattr(field_value, "filename") or not field_value.filename:
+            continue
+        if mc is None:
+            cfg = get_settings()
+            mc = get_minio_client(cfg)
+            ensure_bucket(mc, cfg.minio_bucket)
+        content = await field_value.read()
+        content_type = field_value.content_type or "application/octet-stream"
+        safe_name = field_value.filename.replace(" ", "_")
+        minio_key = f"{workflow_id}/{reference}/{field_id}_{safe_name}"
+        mc.put_object(cfg.minio_bucket, minio_key, io.BytesIO(content), length=len(content), content_type=content_type)
+        size_str = f"{len(content) / 1024:.1f} Ko" if len(content) >= 1024 else f"{len(content)} o"
+        documents.append(DocumentItem(
+            id=f"doc_{field_id}",
+            nom=field_value.filename,
+            type=content_type,
+            statut=DocumentStatus.en_attente,
+            obligatoire=True,
+            uploaded_at=datetime.utcnow().isoformat(),
+            file_size=size_str,
+            minio_key=minio_key,
+            content_type=content_type,
+        ))
+
+    dossier = Dossier(
+        reference=reference,
+        demandeur=Demandeur(nom="–", prenom="–", email="–"),
+        type=workflow.type,
+        workflow_id=str(workflow.id),
+        reponses=reponses,
+        documents=documents,
+    )
+    await dossier.insert()
+    return {"reference": reference, "id": str(dossier.id)}
 
 
 @router.post("", response_model=Dossier, status_code=201)

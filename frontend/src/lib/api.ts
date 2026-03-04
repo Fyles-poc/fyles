@@ -149,6 +149,13 @@ export const api = {
     request<Workflow>(`/workflows/${id}`, { method: 'PUT', body: JSON.stringify(payload) }),
   deleteWorkflow: (id: string) => request<void>(`/workflows/${id}`, { method: 'DELETE' }),
 
+  // Dossier submit (multipart)
+  submitDossier: (formData: FormData) =>
+    fetch(`${BASE}/dossiers/submit`, { method: 'POST', body: formData }).then(async (r) => {
+      if (!r.ok) { const t = await r.text(); throw new Error(t); }
+      return r.json() as Promise<{ reference: string; id: string }>;
+    }),
+
   // Settings
   getOrganization: () => request<Organization>('/settings/organization'),
   updateOrganization: (payload: Omit<Organization, 'id'>) =>

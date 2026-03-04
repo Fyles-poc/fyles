@@ -74,6 +74,7 @@ class Dossier(Document):
     documents: list[DocumentItem] = Field(default_factory=list)
     analysis_results: list[AIAnalysisResult] = Field(default_factory=list)
     recommendation: Optional[AIRecommendation] = None
+    reponses: dict = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
     class Settings:
