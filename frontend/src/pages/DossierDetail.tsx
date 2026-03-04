@@ -12,7 +12,7 @@ import { api } from '../lib/api';
 import { useApi } from '../lib/useApi';
 import { LoadingSpinner, ErrorMessage } from '../components/ui/LoadingSpinner';
 import { StatusBadge } from '../components/ui/Badge';
-import type { DocumentItem, RecommendationDecision } from '../lib/api';
+import type { DocumentItem, RecommendationDecision, FormBlock } from '../lib/api';
 
 // ── File tree icon ─────────────────────────────────────────────────────────
 
@@ -134,6 +134,7 @@ export function DossierDetail() {
   const { reference } = useParams<{ reference: string }>();
   const navigate = useNavigate();
   const [viewerDoc, setViewerDoc] = useState<DocumentItem | null>(null);
+  const [showReponsesModal, setShowReponsesModal] = useState(false);
   const [showDecisionModal, setShowDecisionModal] = useState(false);
   const [decision, setDecision] = useState<RecommendationDecision | null>(null);
   const [commentaire, setCommentaire] = useState('');
@@ -144,9 +145,28 @@ export function DossierDetail() {
     [reference]
   );
 
+  const { data: workflow } = useApi(
+    () => dossier?.workflow_id ? api.getWorkflow(dossier.workflow_id) : Promise.resolve(null),
+    [dossier?.workflow_id]
+  );
+
   if (loading) return <div className="p-6"><LoadingSpinner label="Chargement du dossier..." /></div>;
   if (error) return <div className="p-6"><ErrorMessage message={error} /></div>;
   if (!dossier) return null;
+
+  // Build field label map from workflow formulaire_demande
+  const fieldLabels: Record<string, string> = {};
+  if (workflow?.formulaire_demande) {
+    const flattenBlocks = (blocks: FormBlock[]) => {
+      for (const b of blocks) {
+        fieldLabels[b.id] = b.label;
+        if (b.blocks) flattenBlocks(b.blocks);
+      }
+    };
+    for (const page of workflow.formulaire_demande) {
+      flattenBlocks(page.blocks);
+    }
+  }
 
   // Map analysis_results → instruction questions
   const instructionQuestions = dossier.analysis_results.map((r, i) => ({
@@ -225,20 +245,19 @@ export function DossierDetail() {
         <div className="w-64 border-r border-slate-200 bg-white flex flex-col shrink-0 overflow-hidden">
           <div className="p-3 border-b border-slate-100">
             {/* Formulaire de demande card */}
-            <a
-              href="#"
-              onClick={(e) => e.preventDefault()}
-              className="flex items-center gap-3 p-3 rounded-xl border border-slate-200 hover:border-blue-300 hover:bg-blue-50 transition-colors group"
+            <button
+              onClick={() => setShowReponsesModal(true)}
+              className="w-full flex items-center gap-3 p-3 rounded-xl border border-slate-200 hover:border-blue-300 hover:bg-blue-50 transition-colors group"
             >
               <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center shrink-0">
                 <ClipboardList size={16} className="text-blue-600" />
               </div>
-              <div className="flex-1 min-w-0">
+              <div className="flex-1 min-w-0 text-left">
                 <p className="text-xs font-semibold text-slate-800">Formulaire de demande</p>
                 <p className="text-xs text-slate-400">Réponses du demandeur</p>
               </div>
               <ExternalLink size={13} className="text-slate-300 group-hover:text-blue-400 shrink-0" />
-            </a>
+            </button>
           </div>
 
           {/* File tree */}
@@ -388,6 +407,45 @@ export function DossierDetail() {
           </div>
         </div>
       </div>
+
+      {/* Réponses formulaire modal */}
+      {showReponsesModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl flex flex-col w-full max-w-lg" style={{ maxHeight: '80vh' }}>
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 shrink-0">
+              <div className="flex items-center gap-2">
+                <ClipboardList size={16} className="text-blue-600" />
+                <p className="text-sm font-bold text-slate-800">Formulaire de demande</p>
+              </div>
+              <button onClick={() => setShowReponsesModal(false)} className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors">
+                <X size={16} className="text-slate-500" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-5">
+              {Object.keys(dossier.reponses).length === 0 ? (
+                <p className="text-sm text-slate-400 italic text-center py-8">Aucune réponse enregistrée</p>
+              ) : (
+                <div className="space-y-3">
+                  {Object.entries(dossier.reponses).map(([key, val]) => (
+                    <div key={key} className="bg-slate-50 rounded-lg px-4 py-3">
+                      <p className="text-xs font-semibold text-slate-500 mb-1">
+                        {fieldLabels[key] ?? key}
+                      </p>
+                      <p className="text-sm text-slate-800 wrap-break-word">
+                        {Array.isArray(val)
+                          ? val.join(', ')
+                          : val !== '' && val != null
+                          ? String(val)
+                          : <span className="text-slate-400 italic">Non renseigné</span>}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Document viewer modal */}
       {viewerDoc && (

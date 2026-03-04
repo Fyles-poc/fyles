@@ -97,7 +97,7 @@ export function DossiersList() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-100 bg-slate-50">
-                {['Référence', 'Demandeur', 'Type', 'Statut', 'Confiance IA', 'Dernière MàJ', 'Instructeur', ''].map(h => (
+                {['Référence', 'Type', 'Statut', 'Confiance IA', 'Dernière MàJ', 'Instructeur', ''].map(h => (
                   <th key={h} className="text-left px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">{h}</th>
                 ))}
               </tr>
@@ -105,7 +105,7 @@ export function DossiersList() {
             <tbody>
               {!dossiers || dossiers.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-5 py-10 text-center text-slate-400 text-sm">
+                  <td colSpan={7} className="px-5 py-10 text-center text-slate-400 text-sm">
                     Aucun dossier trouvé
                   </td>
                 </tr>
@@ -116,10 +116,6 @@ export function DossiersList() {
                     onClick={() => navigate(`/dossiers/${d.reference}`)}>
                     <td className="px-5 py-4">
                       <span className="font-semibold text-blue-600">{d.reference}</span>
-                    </td>
-                    <td className="px-5 py-4">
-                      <p className="font-medium text-slate-800">{d.demandeur.prenom} {d.demandeur.nom}</p>
-                      <p className="text-xs text-slate-400">{d.demandeur.email}</p>
                     </td>
                     <td className="px-5 py-4 text-slate-600">{d.type}</td>
                     <td className="px-5 py-4"><StatusBadge type="dossier" status={d.statut} /></td>

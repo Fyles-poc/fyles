@@ -45,6 +45,7 @@ export interface Dossier {
   derniere_maj: string; instructeur?: string;
   documents: DocumentItem[]; analysis_results: AIAnalysisResult[];
   recommendation?: AIRecommendation; created_at: string;
+  reponses: Record<string, unknown>;
 }
 
 export interface FormCondition {
