@@ -45,6 +45,7 @@ export interface Dossier {
   derniere_maj: string; instructeur?: string;
   documents: DocumentItem[]; analysis_results: AIAnalysisResult[];
   recommendation?: AIRecommendation; created_at: string;
+  reponses: Record<string, unknown>;
 }
 
 export interface FormCondition {
@@ -149,6 +150,13 @@ export const api = {
   updateWorkflow: (id: string, payload: Partial<Workflow>) =>
     request<Workflow>(`/workflows/${id}`, { method: 'PUT', body: JSON.stringify(payload) }),
   deleteWorkflow: (id: string) => request<void>(`/workflows/${id}`, { method: 'DELETE' }),
+
+  // Dossier submit (multipart)
+  submitDossier: (formData: FormData) =>
+    fetch(`${BASE}/dossiers/submit`, { method: 'POST', body: formData }).then(async (r) => {
+      if (!r.ok) { const t = await r.text(); throw new Error(t); }
+      return r.json() as Promise<{ reference: string; id: string }>;
+    }),
 
   // Settings
   getOrganization: () => request<Organization>('/settings/organization'),

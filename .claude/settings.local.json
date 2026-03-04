@@ -1,0 +1,31 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl -s http://localhost:8000/health)",
+      "Bash(docker ps --format \"table {{.Names}}\\\\t{{.Status}}\\\\t{{.Ports}}\")",
+      "Bash(docker exec fyles-mongodb-1 mongosh fyles --eval \"db.dossiers.countDocuments\\(\\)\" --quiet)",
+      "Bash(curl -s -X POST http://localhost:8000/api/dossiers/submit -F \"workflow_id=69a6a27eb4cfd9b291def40c\" -F \"reponses={}\" -w \"\\\\nHTTP_STATUS:%{http_code}\")",
+      "Bash(curl -s -X POST http://localhost:8000/api/dossiers/submit -F \"workflow_id=69a6a27eb4cfd9b291def40c\" -F \"reponses={}\")",
+      "Bash(python3 -m json.tool)",
+      "Bash(python3 -c \":*)",
+      "Bash(curl -s -X POST http://localhost:8000/api/dossiers/submit -F \"workflow_id=69a6a27eb4cfd9b291def40c\" -F \"reponses={}\" -v)",
+      "Bash(docker exec fyles-mongodb-1 mongosh fyles --eval \":*)",
+      "Bash(netstat -ano)",
+      "Bash(tasklist /FI \"PID eq 28340\")",
+      "Bash(ls /c/Users/viala/Documents/fyles/fyles/*.sh /c/Users/viala/Documents/fyles/fyles/Makefile /c/Users/viala/Documents/fyles/fyles/package.json)",
+      "Bash(poetry add python-multipart)",
+      "Bash(curl -s -X POST http://localhost:8000/api/dossiers/submit -F \"workflow_id=69a6a27eb4cfd9b291def40c\" -F \"reponses={\"\"b2311a954-863c-4a48-b7ac-c19b379f81ba\"\":\"\"Test Nom\"\"}\" -w \"\\\\nHTTP_STATUS:%{http_code}\")",
+      "Bash(poetry run python -c \"import multipart; print\\(multipart.__version__\\)\")",
+      "Bash(poetry run python -c \"import multipart; print\\(multipart.__file__\\)\")",
+      "Bash(curl -s -X POST http://localhost:8000/api/dossiers/submit -F \"workflow_id=69a6a27eb4cfd9b291def40c\" -F \"reponses={}\" -F \"b1772534005114=@/c/Windows/System32/drivers/etc/hosts;type=text/plain\" -w \"\\\\nHTTP_STATUS:%{http_code}\")",
+      "Bash(poetry run pip install python-multipart)",
+      "Bash(poetry run python -c \":*)",
+      "Bash(poetry run python 2)",
+      "Bash(1:*)",
+      "Bash(curl -s -X POST http://localhost:8000/api/dossiers/submit -F \"workflow_id=69a6a27eb4cfd9b291def40c\" -F \"reponses={\"\"test\"\":\"\"valeur\"\"}\" -w \"\\\\nHTTP:%{http_code}\")",
+      "Bash(curl -s -X POST http://localhost:8000/api/dossiers/submit -F \"workflow_id=69a6a27eb4cfd9b291def40c\" -F \"reponses={\"\"test\"\":\"\"valeur\"\"}\")",
+      "Bash(poetry run python -c \"import sys; print\\(sys.executable\\)\")",
+      "Bash(curl -s -X POST http://localhost:8000/api/dossiers/submit -F \"workflow_id=69a820414f4e1055534e0956\" -F \"reponses={\"\"b2311a954\"\":\"\"Jean Dupont\"\"}\" -w \"\\\\nHTTP:%{http_code}\")"
+    ]
+  }
+}
