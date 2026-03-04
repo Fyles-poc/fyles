@@ -35,6 +35,17 @@ function evaluateCondition(condition: FormCondition, values: Record<string, stri
   }
 }
 
+function evaluateConditions(
+  conditions: FormCondition[],
+  logic: string,
+  values: Record<string, string>
+): boolean {
+  if (!conditions.length) return true;
+  return logic === 'OR'
+    ? conditions.some((c) => evaluateCondition(c, values))
+    : conditions.every((c) => evaluateCondition(c, values));
+}
+
 // ── AnimatedContainer ────────────────────────────────────────────────────────
 
 function AnimatedContainer({ visible, children }: { visible: boolean; children: React.ReactNode }) {
@@ -237,7 +248,7 @@ function renderItem(
   onFileChange: (id: string, f: File | null) => void,
 ): React.ReactNode {
   if (block.type === 'container') {
-    const visible = !block.condition || evaluateCondition(block.condition, values);
+    const visible = evaluateConditions(block.conditions ?? [], block.conditionLogic ?? 'AND', values);
     return (
       <AnimatedContainer key={block.id} visible={visible}>
         <div className="rounded-xl border border-blue-100 bg-blue-50/20 px-6 py-5 space-y-5">

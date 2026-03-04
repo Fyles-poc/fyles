@@ -49,7 +49,8 @@ class FormBlock(BaseModel):
     required: bool = True
     eligibility: Optional[bool] = None
     options: Optional[list[str]] = None
-    condition: Optional[FormCondition] = None
+    conditions: Optional[list[FormCondition]] = None
+    condition_logic: str = "AND"
     blocks: Optional[list['FormBlock']] = None  # for container type
 
 

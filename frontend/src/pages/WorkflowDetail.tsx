@@ -36,7 +36,8 @@ interface FormBlock {
   required: boolean;
   eligibility?: boolean;
   options?: string[];
-  condition?: FormCondition;
+  conditions?: FormCondition[];
+  conditionLogic?: 'AND' | 'OR';
   blocks?: FormBlock[];
 }
 
@@ -303,33 +304,39 @@ function AddFieldMenu({
 // ── ConditionEditor ─────────────────────────────────────────────────────────
 
 function ConditionEditor({
-  condition,
+  conditions: initialConditions,
+  conditionLogic: initialLogic,
   allFields,
   onSave,
-  onRemove,
+  onRemoveAll,
   onClose,
 }: {
-  condition?: FormCondition;
+  conditions?: FormCondition[];
+  conditionLogic?: 'AND' | 'OR';
   allFields: FormBlock[];
-  onSave: (c: FormCondition) => void;
-  onRemove: () => void;
+  onSave: (conditions: FormCondition[], logic: 'AND' | 'OR') => void;
+  onRemoveAll: () => void;
   onClose: () => void;
 }) {
-  const [fieldId, setFieldId] = useState(condition?.field_id ?? '');
-  const [operator, setOperator] = useState(condition?.operator ?? 'equals');
-  const [value, setValue] = useState(condition?.value ?? '');
+  const [logic, setLogic] = useState<'AND' | 'OR'>(initialLogic ?? 'AND');
+  const [rows, setRows] = useState<FormCondition[]>(
+    initialConditions?.length ? initialConditions : [{ field_id: '', operator: 'equals', value: '' }]
+  );
 
-  const selectedField = allFields.find((f) => f.id === fieldId);
-  const operators = getOperators(selectedField?.type ?? '');
+  const updateRow = (i: number, patch: Partial<FormCondition>) =>
+    setRows((prev) => prev.map((r, j) => (j === i ? { ...r, ...patch } : r)));
 
-  const handleFieldChange = (newId: string) => {
-    setFieldId(newId);
+  const handleFieldChange = (i: number, newId: string) => {
     const newField = allFields.find((f) => f.id === newId);
     const newOps = getOperators(newField?.type ?? '');
-    if (newOps.length > 0 && !newOps.find((op) => op.value === operator)) {
-      setOperator(newOps[0].value);
-    }
+    const currentOp = rows[i].operator;
+    const validOp = newOps.find((op) => op.value === currentOp) ? currentOp : (newOps[0]?.value ?? 'equals');
+    updateRow(i, { field_id: newId, operator: validOp });
   };
+
+  const addRow = () => setRows((prev) => [...prev, { field_id: '', operator: 'equals', value: '' }]);
+  const removeRow = (i: number) => setRows((prev) => prev.filter((_, j) => j !== i));
+  const canSave = rows.length > 0 && rows.every((r) => r.field_id);
 
   return (
     <div
@@ -337,7 +344,7 @@ function ConditionEditor({
       onClick={onClose}
     >
       <div
-        className="bg-white rounded-2xl shadow-2xl w-96 p-6"
+        className="bg-white rounded-2xl shadow-2xl w-120 p-6"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between mb-4">
@@ -345,7 +352,7 @@ function ConditionEditor({
             <div className="w-7 h-7 rounded-lg bg-violet-100 text-violet-600 flex items-center justify-center">
               <GitBranch size={14} />
             </div>
-            <h3 className="text-base font-semibold text-slate-800">Condition d'affichage</h3>
+            <h3 className="text-base font-semibold text-slate-800">Conditions d'affichage</h3>
           </div>
           <button onClick={onClose} className="p-1 hover:bg-slate-100 rounded-lg transition-colors">
             <X size={16} className="text-slate-400" />
@@ -353,61 +360,98 @@ function ConditionEditor({
         </div>
 
         <p className="text-xs text-slate-500 mb-4 bg-slate-50 px-3 py-2 rounded-lg">
-          Ce container s'affichera uniquement si la condition ci-dessous est vraie.
+          Ce container s'affichera uniquement si les conditions ci-dessous sont vérifiées.
         </p>
 
-        <div className="space-y-3">
-          <div>
-            <label className="text-xs font-medium text-slate-600 block mb-1.5">Champ à évaluer</label>
-            <select
-              value={fieldId}
-              onChange={(e) => handleFieldChange(e.target.value)}
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-violet-500 bg-white"
-            >
-              <option value="">Sélectionner un champ...</option>
-              {allFields.map((f) => (
-                <option key={f.id} value={f.id}>
-                  {f.label || `(${fieldMeta(f.type).label})`}
-                </option>
-              ))}
-            </select>
+        {/* AND / OR toggle — affiché seulement si > 1 condition */}
+        {rows.length > 1 && (
+          <div className="flex items-center gap-2 mb-3">
+            <span className="text-xs text-slate-500 font-medium shrink-0">Logique :</span>
+            <div className="flex rounded-lg border border-slate-200 overflow-hidden text-xs font-medium">
+              <button
+                onClick={() => setLogic('AND')}
+                className={`px-3 py-1.5 transition-colors ${logic === 'AND' ? 'bg-violet-600 text-white' : 'text-slate-600 hover:bg-slate-50'}`}
+              >
+                Toutes (ET)
+              </button>
+              <button
+                onClick={() => setLogic('OR')}
+                className={`px-3 py-1.5 transition-colors ${logic === 'OR' ? 'bg-violet-600 text-white' : 'text-slate-600 hover:bg-slate-50'}`}
+              >
+                Au moins une (OU)
+              </button>
+            </div>
           </div>
+        )}
 
-          <div>
-            <label className="text-xs font-medium text-slate-600 block mb-1.5">Opérateur</label>
-            <select
-              value={operator}
-              onChange={(e) => setOperator(e.target.value)}
-              disabled={!fieldId}
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-violet-500 bg-white disabled:opacity-50"
-            >
-              {operators.map((op) => (
-                <option key={op.value} value={op.value}>{op.label}</option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="text-xs font-medium text-slate-600 block mb-1.5">Valeur</label>
-            <input
-              type="text"
-              value={value}
-              onChange={(e) => setValue(e.target.value)}
-              placeholder="ex: Oui, Non, 18, Paris..."
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-violet-500"
-            />
-          </div>
+        {/* Lignes de conditions */}
+        <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+          {rows.map((row, i) => {
+            const selectedField = allFields.find((f) => f.id === row.field_id);
+            const operators = getOperators(selectedField?.type ?? '');
+            return (
+              <div key={i} className="flex items-center gap-2 bg-slate-50 rounded-lg p-2">
+                {rows.length > 1 && (
+                  <span className="text-xs text-slate-400 font-mono w-4 text-center shrink-0">{i + 1}</span>
+                )}
+                <select
+                  value={row.field_id}
+                  onChange={(e) => handleFieldChange(i, e.target.value)}
+                  className="flex-1 border border-slate-200 rounded-md px-2 py-1.5 text-xs text-slate-700 focus:outline-none focus:ring-1 focus:ring-violet-500 bg-white min-w-0"
+                >
+                  <option value="">Champ…</option>
+                  {allFields.map((f) => (
+                    <option key={f.id} value={f.id}>
+                      {f.label || `(${fieldMeta(f.type).label})`}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  value={row.operator}
+                  onChange={(e) => updateRow(i, { operator: e.target.value })}
+                  disabled={!row.field_id}
+                  className="border border-slate-200 rounded-md px-2 py-1.5 text-xs text-slate-700 focus:outline-none focus:ring-1 focus:ring-violet-500 bg-white disabled:opacity-50 shrink-0"
+                >
+                  {operators.map((op) => (
+                    <option key={op.value} value={op.value}>{op.label}</option>
+                  ))}
+                </select>
+                <input
+                  type="text"
+                  value={row.value}
+                  onChange={(e) => updateRow(i, { value: e.target.value })}
+                  placeholder="Valeur…"
+                  className="w-24 border border-slate-200 rounded-md px-2 py-1.5 text-xs text-slate-700 focus:outline-none focus:ring-1 focus:ring-violet-500 shrink-0"
+                />
+                <button
+                  onClick={() => removeRow(i)}
+                  disabled={rows.length === 1}
+                  className="p-1 hover:bg-red-50 rounded transition-colors disabled:opacity-30 shrink-0"
+                >
+                  <X size={13} className="text-slate-400 hover:text-red-400" />
+                </button>
+              </div>
+            );
+          })}
         </div>
 
-        <div className="flex items-center gap-2 mt-5">
-          {condition && (
+        <button
+          onClick={addRow}
+          className="flex items-center gap-1.5 text-xs text-violet-600 hover:text-violet-800 mt-3 font-medium transition-colors"
+        >
+          <Plus size={12} />
+          Ajouter une condition
+        </button>
+
+        <div className="flex items-center gap-2 mt-5 pt-4 border-t border-slate-100">
+          {initialConditions?.length ? (
             <button
-              onClick={() => { onRemove(); onClose(); }}
+              onClick={() => { onRemoveAll(); onClose(); }}
               className="text-xs text-red-500 hover:text-red-700 px-3 py-1.5 rounded-lg hover:bg-red-50 transition-colors"
             >
-              Supprimer la condition
+              Tout supprimer
             </button>
-          )}
+          ) : null}
           <div className="flex gap-2 ml-auto">
             <button
               onClick={onClose}
@@ -416,10 +460,8 @@ function ConditionEditor({
               Annuler
             </button>
             <button
-              onClick={() => {
-                if (fieldId) { onSave({ field_id: fieldId, operator, value }); onClose(); }
-              }}
-              disabled={!fieldId}
+              onClick={() => { if (canSave) { onSave(rows, logic); onClose(); } }}
+              disabled={!canSave}
               className="px-4 py-2 bg-violet-600 text-white text-sm font-medium rounded-lg hover:bg-violet-700 disabled:opacity-50 transition-colors"
             >
               Enregistrer
@@ -435,7 +477,7 @@ function ConditionEditor({
 
 function BlockCard({
   block, isInstruction,
-  onDelete, onLabelChange, onToggleRequired, onToggleEligibility,
+  onDelete, onLabelChange, onToggleRequired, onToggleEligibility, onOptionsChange,
   onDragStart, onDragOver, onDrop,
 }: {
   block: FormBlock;
@@ -444,6 +486,7 @@ function BlockCard({
   onLabelChange: (v: string) => void;
   onToggleRequired: () => void;
   onToggleEligibility: () => void;
+  onOptionsChange: (options: string[]) => void;
   onDragStart: (e: React.DragEvent) => void;
   onDragOver: (e: React.DragEvent) => void;
   onDrop: (e: React.DragEvent) => void;
@@ -544,19 +587,101 @@ function BlockCard({
               </div>
             )}
             {(block.type === 'multiple_choice' || block.type === 'multiselect') && (
-              <div className="space-y-1.5 mt-1">
-                {['Option 1', 'Option 2', 'Option 3'].map((o, i) => (
-                  <div key={i} className="flex items-center gap-2">
-                    <div className={`w-4 h-4 border border-slate-300 ${block.type === 'multiselect' ? 'rounded' : 'rounded-full'} shrink-0`} />
-                    <span className="text-xs text-slate-400">{o}</span>
+              <div className="space-y-1 mt-1">
+                {(block.options ?? []).map((opt, i) => (
+                  <div key={i} className="flex items-center gap-2 group/opt py-0.5">
+                    <div className={`w-3.5 h-3.5 border-2 border-slate-300 shrink-0 ${block.type === 'multiselect' ? 'rounded' : 'rounded-full'}`} />
+                    <input
+                      type="text"
+                      value={opt}
+                      autoFocus={opt === '' && i === (block.options?.length ?? 0) - 1}
+                      onChange={(e) => {
+                        const next = [...(block.options ?? [])];
+                        next[i] = e.target.value;
+                        onOptionsChange(next);
+                      }}
+                      onClick={(e) => e.stopPropagation()}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') { e.preventDefault(); onOptionsChange([...(block.options ?? []), '']); }
+                        if (e.key === 'Backspace' && opt === '' && (block.options?.length ?? 0) > 1) {
+                          e.preventDefault();
+                          onOptionsChange((block.options ?? []).filter((_, j) => j !== i));
+                        }
+                      }}
+                      placeholder={`Option ${i + 1}`}
+                      className="flex-1 text-xs text-slate-700 bg-transparent border-0 border-b border-dashed border-transparent focus:border-blue-400 focus:outline-none py-0.5 min-w-0"
+                    />
+                    <button
+                      onClick={(e) => { e.stopPropagation(); onOptionsChange((block.options ?? []).filter((_, j) => j !== i)); }}
+                      className="opacity-0 group-hover/opt:opacity-100 p-0.5 hover:bg-red-50 rounded transition-all shrink-0"
+                    >
+                      <X size={11} className="text-slate-300 hover:text-red-400" />
+                    </button>
                   </div>
                 ))}
+                {(block.options ?? []).length === 0 && (
+                  <p className="text-xs text-slate-300 italic py-1">Aucune option — ajoutez-en ci-dessous</p>
+                )}
+                <button
+                  onClick={(e) => { e.stopPropagation(); onOptionsChange([...(block.options ?? []), '']); }}
+                  className="flex items-center gap-1.5 text-xs text-blue-500 hover:text-blue-700 mt-1 transition-colors"
+                >
+                  <Plus size={11} />
+                  Ajouter une option
+                </button>
               </div>
             )}
             {block.type === 'dropdown' && (
-              <div className="h-8 bg-slate-50 border border-slate-200 rounded-lg flex items-center justify-between px-3">
-                <span className="text-xs text-slate-300">Sélectionner...</span>
-                <ChevronDown size={12} className="text-slate-300" />
+              <div className="mt-1">
+                <div className="border border-slate-200 rounded-lg overflow-hidden">
+                  <div className="h-7 bg-slate-50 border-b border-slate-100 flex items-center justify-between px-3">
+                    <span className="text-xs text-slate-400">Sélectionner…</span>
+                    <ChevronDown size={11} className="text-slate-300" />
+                  </div>
+                  {(block.options ?? []).map((opt, i) => (
+                    <div key={i} className="flex items-center gap-2 px-3 py-1.5 group/opt hover:bg-slate-50 border-b border-slate-100 last:border-0">
+                      <span className="text-xs text-slate-300 font-mono shrink-0">{i + 1}.</span>
+                      <input
+                        type="text"
+                        value={opt}
+                        autoFocus={opt === '' && i === (block.options?.length ?? 0) - 1}
+                        onChange={(e) => {
+                          const next = [...(block.options ?? [])];
+                          next[i] = e.target.value;
+                          onOptionsChange(next);
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') { e.preventDefault(); onOptionsChange([...(block.options ?? []), '']); }
+                          if (e.key === 'Backspace' && opt === '' && (block.options?.length ?? 0) > 1) {
+                            e.preventDefault();
+                            onOptionsChange((block.options ?? []).filter((_, j) => j !== i));
+                          }
+                        }}
+                        placeholder={`Option ${i + 1}`}
+                        className="flex-1 text-xs text-slate-700 bg-transparent border-0 focus:outline-none min-w-0"
+                      />
+                      <button
+                        onClick={(e) => { e.stopPropagation(); onOptionsChange((block.options ?? []).filter((_, j) => j !== i)); }}
+                        className="opacity-0 group-hover/opt:opacity-100 p-0.5 hover:bg-red-50 rounded transition-all shrink-0"
+                      >
+                        <X size={11} className="text-slate-300 hover:text-red-400" />
+                      </button>
+                    </div>
+                  ))}
+                  {(block.options ?? []).length === 0 && (
+                    <div className="px-3 py-2">
+                      <p className="text-xs text-slate-300 italic">Aucune option</p>
+                    </div>
+                  )}
+                </div>
+                <button
+                  onClick={(e) => { e.stopPropagation(); onOptionsChange([...(block.options ?? []), '']); }}
+                  className="flex items-center gap-1.5 text-xs text-blue-500 hover:text-blue-700 mt-2 transition-colors"
+                >
+                  <Plus size={11} />
+                  Ajouter une option
+                </button>
               </div>
             )}
             {block.type === 'eligibility' && (
@@ -610,7 +735,7 @@ function BlockCard({
 
 function ContainerCard({
   container, isInstruction, allFields,
-  onDelete, onLabelChange, onSetCondition,
+  onDelete, onLabelChange, onSaveConditions, onClearConditions,
   onAddBlock, onDeleteBlock, onUpdateBlock,
   onDragStart, onDragOver, onDrop,
 }: {
@@ -619,7 +744,8 @@ function ContainerCard({
   allFields: FormBlock[];
   onDelete: () => void;
   onLabelChange: (v: string) => void;
-  onSetCondition: (c: FormCondition | undefined) => void;
+  onSaveConditions: (conditions: FormCondition[], logic: 'AND' | 'OR') => void;
+  onClearConditions: () => void;
   onAddBlock: (type: FieldType) => void;
   onDeleteBlock: (id: string) => void;
   onUpdateBlock: (id: string, patch: Partial<FormBlock>) => void;
@@ -642,10 +768,15 @@ function ContainerCard({
     innerDragRef.current = null;
   };
 
-  const cond = container.condition;
-  const condFieldLabel = cond
-    ? allFields.find((f) => f.id === cond.field_id)?.label || 'champ'
-    : '';
+  const conditions = container.conditions ?? [];
+  const conditionLogic = container.conditionLogic ?? 'AND';
+  const hasConditions = conditions.length > 0;
+  const conditionText = conditions
+    .map((c) => {
+      const fl = allFields.find((f) => f.id === c.field_id)?.label ?? 'champ';
+      return `${fl} ${OPERATOR_LABELS[c.operator] ?? c.operator} «${c.value}»`;
+    })
+    .join(conditionLogic === 'OR' ? '  OU  ' : '  ET  ');
 
   return (
     <div
@@ -656,21 +787,21 @@ function ContainerCard({
       className="border-2 border-blue-100 rounded-xl overflow-hidden group bg-white"
     >
       {/* Condition badge */}
-      {cond && (
-        <div className="bg-violet-50 border-b border-violet-100 px-4 py-1.5 flex items-center gap-1.5">
-          <GitBranch size={11} className="text-violet-500" />
-          <span className="text-xs text-violet-600 font-medium">
-            Affiché si : {condFieldLabel} {OPERATOR_LABELS[cond.operator] ?? cond.operator} «{cond.value}»
+      {hasConditions && (
+        <div className="bg-violet-50 border-b border-violet-100 px-4 py-2 flex items-start gap-2">
+          <GitBranch size={11} className="text-violet-500 mt-0.5 shrink-0" />
+          <span className="text-xs text-violet-600 font-medium flex-1 min-w-0 leading-relaxed">
+            {conditionText}
           </span>
           <button
             onClick={() => setShowCondEditor(true)}
-            className="ml-auto text-xs text-violet-500 hover:text-violet-700 transition-colors"
+            className="text-xs text-violet-500 hover:text-violet-700 transition-colors shrink-0"
           >
             Modifier
           </button>
           <button
-            onClick={() => onSetCondition(undefined)}
-            className="p-0.5 hover:bg-violet-100 rounded transition-colors"
+            onClick={onClearConditions}
+            className="p-0.5 hover:bg-violet-100 rounded transition-colors shrink-0"
           >
             <X size={11} className="text-violet-400" />
           </button>
@@ -695,15 +826,17 @@ function ContainerCard({
         <span className="text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full font-medium shrink-0">
           {innerBlocks.length} champ{innerBlocks.length !== 1 ? 's' : ''}
         </span>
-        {!cond && (
-          <button
-            onClick={() => setShowCondEditor(true)}
-            className="flex items-center gap-1 text-xs text-slate-400 hover:text-violet-600 transition-colors shrink-0"
-          >
-            <GitBranch size={12} />
-            Condition
-          </button>
-        )}
+        <button
+          onClick={() => setShowCondEditor(true)}
+          className={`flex items-center gap-1 text-xs transition-colors shrink-0 ${
+            hasConditions
+              ? 'text-violet-500 hover:text-violet-700'
+              : 'text-slate-400 hover:text-violet-600'
+          }`}
+        >
+          <GitBranch size={12} />
+          {hasConditions ? `${conditions.length} condition${conditions.length > 1 ? 's' : ''}` : 'Condition'}
+        </button>
         <button
           onClick={onDelete}
           className="opacity-0 group-hover:opacity-100 p-1 hover:bg-red-50 rounded-lg transition-all shrink-0"
@@ -730,6 +863,7 @@ function ContainerCard({
             onLabelChange={(v) => onUpdateBlock(block.id, { label: v })}
             onToggleRequired={() => onUpdateBlock(block.id, { required: !block.required })}
             onToggleEligibility={() => onUpdateBlock(block.id, { eligibility: !block.eligibility })}
+            onOptionsChange={(opts) => onUpdateBlock(block.id, { options: opts })}
             onDragStart={(e) => {
               e.stopPropagation();
               innerDragRef.current = bi;
@@ -744,10 +878,11 @@ function ContainerCard({
 
       {showCondEditor && (
         <ConditionEditor
-          condition={cond}
+          conditions={conditions}
+          conditionLogic={conditionLogic}
           allFields={allFields}
-          onSave={(c) => onSetCondition(c)}
-          onRemove={() => onSetCondition(undefined)}
+          onSave={onSaveConditions}
+          onRemoveAll={onClearConditions}
           onClose={() => setShowCondEditor(false)}
         />
       )}
@@ -784,7 +919,7 @@ function FormTree({ blocks }: { blocks: FormBlock[] }) {
               <span className="text-xs text-blue-600 font-semibold truncate flex-1 text-left">
                 {block.label || '(container)'}
               </span>
-              {block.condition && <GitBranch size={10} className="text-violet-400 shrink-0" />}
+              {block.conditions && <GitBranch size={10} className="text-violet-400 shrink-0" />}
               {isCollapsed
                 ? <ChevronDown size={10} className="text-slate-400 shrink-0" />
                 : <ChevronUp size={10} className="text-slate-400 shrink-0" />}
@@ -843,11 +978,13 @@ function FormBuilder({
   const dragRef = useRef<number | null>(null);
 
   const addBlock = (type: FieldType, containerId?: string) => {
+    const isChoice = type === 'multiple_choice' || type === 'dropdown' || type === 'multiselect';
     const newBlock: FormBlock = {
       id: `b${crypto.randomUUID()}`,
       type,
       label: '',
       required: type !== 'header' && type !== 'text' && type !== 'container',
+      options: isChoice ? ['Option 1', 'Option 2'] : undefined,
     };
     if (containerId) {
       setBlocks((prev) => addToContainer(prev, containerId, newBlock));
@@ -923,7 +1060,8 @@ function FormBuilder({
                 allFields={allFields}
                 onDelete={() => deleteBlock(block.id)}
                 onLabelChange={(v) => updateBlock(block.id, { label: v })}
-                onSetCondition={(c) => updateBlock(block.id, { condition: c })}
+                onSaveConditions={(conditions, logic) => updateBlock(block.id, { conditions, conditionLogic: logic })}
+                onClearConditions={() => updateBlock(block.id, { conditions: undefined })}
                 onAddBlock={(type) => addBlock(type, block.id)}
                 onDeleteBlock={deleteBlock}
                 onUpdateBlock={updateBlock}
@@ -940,6 +1078,7 @@ function FormBuilder({
                 onLabelChange={(v) => updateBlock(block.id, { label: v })}
                 onToggleRequired={() => updateBlock(block.id, { required: !block.required })}
                 onToggleEligibility={() => updateBlock(block.id, { eligibility: !block.eligibility })}
+                onOptionsChange={(opts) => updateBlock(block.id, { options: opts })}
                 onDragStart={(e) => handleDragStart(e, idx)}
                 onDragOver={handleDragOver}
                 onDrop={(e) => handleDrop(e, idx)}
