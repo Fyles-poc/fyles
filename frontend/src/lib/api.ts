@@ -182,6 +182,7 @@ export const api = {
     body: JSON.stringify(payload),
   }),
 
+  deleteDossier: (reference: string) => request<void>(`/dossiers/${reference}`, { method: 'DELETE' }),
   updateDossierReponses: (reference: string, payload: Record<string, unknown>) =>
     request<Dossier>(`/dossiers/${reference}/reponses`, { method: 'PATCH', body: JSON.stringify(payload) }),
   replaceDossierDocument: (reference: string, docId: string, file: File) => {

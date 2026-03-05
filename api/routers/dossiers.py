@@ -225,4 +225,19 @@ async def delete_dossier(reference: str):
     dossier = await Dossier.find_one(Dossier.reference == reference)
     if not dossier:
         raise HTTPException(status_code=404, detail=f"Dossier {reference} introuvable")
+
+    # Clean up MinIO objects
+    if dossier.documents:
+        try:
+            cfg = get_settings()
+            mc = get_minio_client(cfg)
+            for doc in dossier.documents:
+                if doc.minio_key:
+                    try:
+                        mc.remove_object(cfg.minio_bucket, doc.minio_key)
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
     await dossier.delete()

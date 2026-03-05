@@ -6,12 +6,13 @@ import {
   MessageSquare, Download, Eye, X,
   ClipboardList, ExternalLink, FileText, Image, File,
   Sparkles, ShieldAlert, ChevronDown, ChevronUp,
-  CheckSquare, Bot, Play, Pencil, Save, ArrowLeftRight, Loader2,
+  CheckSquare, Bot, Play, Pencil, Save, ArrowLeftRight, Loader2, Trash2,
 } from 'lucide-react';
 import { api } from '../lib/api';
 import { useApi } from '../lib/useApi';
 import { LoadingSpinner, ErrorMessage } from '../components/ui/LoadingSpinner';
 import { StatusBadge } from '../components/ui/Badge';
+import { ConfirmModal } from '../components/ui/ConfirmModal';
 import type { DocumentItem, RecommendationDecision, FormBlock, WorkflowExecutionResult } from '../lib/api';
 
 // ── File tree icon ─────────────────────────────────────────────────────────
@@ -189,6 +190,8 @@ export function DossierDetail() {
   const [editedReponses, setEditedReponses] = useState<Record<string, unknown>>({});
   const [savingReponses, setSavingReponses] = useState(false);
   const [replacingDocId, setReplacingDocId] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pendingDocIdRef = useRef<string | null>(null);
 
@@ -325,6 +328,18 @@ export function DossierDetail() {
     }
   };
 
+  const doDelete = async () => {
+    setShowDeleteConfirm(false);
+    setDeleting(true);
+    try {
+      await api.deleteDossier(dossier.reference);
+      navigate('/dossiers');
+    } catch (e) {
+      console.error(e);
+      setDeleting(false);
+    }
+  };
+
   const hasWorkflowNodes = (workflow?.nodes?.length ?? 0) > 0;
 
   return (
@@ -385,6 +400,15 @@ export function DossierDetail() {
           )}
           <button className="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors text-slate-600">
             <Download size={14} />Exporter
+          </button>
+          <button
+            onClick={() => setShowDeleteConfirm(true)}
+            disabled={deleting}
+            title="Supprimer le dossier"
+            className="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-red-200 rounded-lg hover:bg-red-50 transition-colors text-red-500 disabled:opacity-50"
+          >
+            {deleting ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+            Supprimer
           </button>
         </div>
       </div>
@@ -920,6 +944,17 @@ export function DossierDetail() {
             </div>
           </div>
         </div>
+      )}
+
+      {showDeleteConfirm && (
+        <ConfirmModal
+          title="Supprimer le dossier"
+          message={`Le dossier ${dossier.reference} et tous ses fichiers seront définitivement supprimés. Cette action est irréversible.`}
+          confirmLabel="Supprimer définitivement"
+          loading={deleting}
+          onConfirm={doDelete}
+          onCancel={() => setShowDeleteConfirm(false)}
+        />
       )}
     </div>
   );
