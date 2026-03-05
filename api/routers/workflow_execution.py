@@ -168,13 +168,20 @@ async def _run_analysis_node(
         statut = "ok" if result_val >= 70 else ("warning" if result_val >= 40 else "error")
 
     # ── Persist into dossier.analysis_results ────────────────────────────────
+    # Build details: [result_value, "doc:field_id", ...]
+    details: list[str] = [str(result_val)] if result_val is not None else []
+    for field_id in sources:
+        meta = form_fields_map.get(field_id, {"type": ""})
+        if meta["type"] in ("file_upload", "multifile_upload"):
+            details.append(f"doc:{field_id}")
+
     entry_id = f"auto_{node.id}"
     ai_entry = AIAnalysisResult(
         id=entry_id,
         label=node.label or "Analyse automatique",
         statut=statut,
-        message=parsed.get("justification") or str(result_val or ""),
-        details=[],
+        message=parsed.get("justification") or "",
+        details=details,
     )
     if dossier.analysis_results is None:
         dossier.analysis_results = []

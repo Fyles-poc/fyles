@@ -32,24 +32,51 @@ function DocStatusDot({ status }: { status: DocumentItem['statut'] }) {
 
 // ── Instruction question card (center) ────────────────────────────────────
 
+function FormatResult({ raw, status }: { raw: string; status: 'ok' | 'warning' | 'error' }) {
+  const lower = raw.toLowerCase().trim();
+  if (lower === 'true') return (
+    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-100 text-emerald-700 text-sm font-semibold">
+      <CheckCircle size={14} /> Oui
+    </span>
+  );
+  if (lower === 'false') return (
+    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-red-100 text-red-600 text-sm font-semibold">
+      <XCircle size={14} /> Non
+    </span>
+  );
+  const num = Number(raw);
+  if (!isNaN(num) && raw.trim() !== '') return (
+    <span className={`inline-flex items-center gap-1 text-2xl font-bold ${status === 'ok' ? 'text-emerald-600' : status === 'error' ? 'text-red-500' : 'text-amber-600'}`}>
+      {raw}<span className="text-sm font-normal text-slate-400">/ 100</span>
+    </span>
+  );
+  return (
+    <span className={`inline-flex items-center px-3 py-1.5 rounded-full text-sm font-medium ${status === 'ok' ? 'bg-emerald-100 text-emerald-700' : status === 'error' ? 'bg-red-100 text-red-600' : 'bg-amber-100 text-amber-700'}`}>
+      {raw}
+    </span>
+  );
+}
+
 function InstructionCard({
   index,
   label,
-  answer,
+  result,
+  message,
   status,
-  reasoning,
   isEligibilityKO,
-  sources,
+  linkedDocs,
+  onViewDoc,
 }: {
   index: number;
   label: string;
-  answer: string;
+  result: string;
+  message: string;
   status: 'ok' | 'warning' | 'error';
-  reasoning: string[];
   isEligibilityKO: boolean;
-  sources: string[];
+  linkedDocs: DocumentItem[];
+  onViewDoc: (doc: DocumentItem) => void;
 }) {
-  const [reasoningOpen, setReasoningOpen] = useState(true);
+  const [analysisOpen, setAnalysisOpen] = useState(true);
 
   return (
     <div className={`bg-white border rounded-xl overflow-hidden mb-4 ${
@@ -68,55 +95,50 @@ function InstructionCard({
           <p className="text-sm font-semibold text-slate-800">{label}</p>
         </div>
 
-        {/* Answer field */}
-        <div className={`border rounded-lg px-3 py-2.5 text-sm min-h-40 ${
+        {/* Result */}
+        <div className={`border rounded-lg px-4 py-3 flex items-center justify-center min-h-14 ${
           status === 'ok'
-            ? 'border-emerald-200 bg-emerald-50/50 text-emerald-800'
+            ? 'border-emerald-200 bg-emerald-50/50'
             : status === 'error'
-            ? 'border-red-200 bg-red-50/50 text-red-800'
-            : 'border-amber-200 bg-amber-50/50 text-amber-800'
+            ? 'border-red-200 bg-red-50/50'
+            : 'border-amber-200 bg-amber-50/50'
         }`}>
-          {answer || <span className="text-slate-400 italic">Non renseigné</span>}
+          {result
+            ? <FormatResult raw={result} status={status} />
+            : <span className="text-slate-400 italic text-sm">Aucun résultat</span>}
         </div>
 
-        {/* AI Reasoning block */}
+        {/* Analyse IA */}
         <div className="mt-3 bg-blue-50 border border-blue-100 rounded-lg overflow-hidden">
           <button
             className="w-full flex items-center justify-between px-3 py-2 text-left"
-            onClick={() => setReasoningOpen(!reasoningOpen)}
+            onClick={() => setAnalysisOpen(!analysisOpen)}
           >
             <div className="flex items-center gap-2">
               <Sparkles size={13} className="text-blue-500" />
               <span className="text-xs font-semibold text-blue-700">Analyse IA</span>
             </div>
-            {reasoningOpen
+            {analysisOpen
               ? <ChevronUp size={12} className="text-blue-400" />
               : <ChevronDown size={12} className="text-blue-400" />}
           </button>
-          {reasoningOpen && (
-            <div className="px-3 pb-3 space-y-2 border-t border-blue-100">
-              {reasoning.length > 0 ? (
-                <ul className="space-y-1 pt-2">
-                  {reasoning.map((r, i) => (
-                    <li key={i} className="flex items-start gap-1.5 text-xs text-blue-700">
-                      <span className="text-blue-400 mt-0.5 shrink-0">•</span>
-                      {r}
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="text-xs text-blue-600 pt-2 italic">Aucun détail disponible</p>
-              )}
-              {sources.length > 0 && (
-                <div className="pt-1">
-                  {sources.map((src, i) => (
-                    <span
-                      key={i}
-                      className="inline-flex items-center gap-1 text-xs bg-blue-100 text-blue-600 px-2 py-0.5 rounded-full mr-1 mb-1"
+          {analysisOpen && (
+            <div className="px-3 pb-3 pt-2 border-t border-blue-100 space-y-2">
+              {message
+                ? <p className="text-xs text-blue-700 leading-relaxed">{message}</p>
+                : <p className="text-xs text-blue-600 italic">Aucun détail disponible</p>}
+              {linkedDocs.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 pt-1">
+                  {linkedDocs.map((doc) => (
+                    <button
+                      key={doc.id}
+                      onClick={() => onViewDoc(doc)}
+                      className="inline-flex items-center gap-1.5 text-xs bg-white border border-blue-200 text-blue-600 hover:bg-blue-100 px-2 py-1 rounded-lg transition-colors"
                     >
-                      <FileText size={10} />
-                      {src}
-                    </span>
+                      <FileIcon contentType={doc.content_type} />
+                      <span className="max-w-32 truncate">{doc.nom}</span>
+                      <Eye size={10} className="shrink-0 text-blue-400" />
+                    </button>
                   ))}
                 </div>
               )}
@@ -172,19 +194,24 @@ export function DossierDetail() {
   }
 
   // Map analysis_results → instruction questions
-  const instructionQuestions = dossier.analysis_results.map((r, i) => ({
-    id: r.id,
-    index: i + 1,
-    label: r.label,
-    answer: r.message,
-    status: r.statut as 'ok' | 'warning' | 'error',
-    reasoning: r.details ?? [],
-    isEligibilityKO: r.statut === 'error',
-    sources: dossier.documents
-      .filter((d) => d.statut !== 'manquant')
-      .slice(0, 2)
-      .map((d) => d.nom),
-  }));
+  const instructionQuestions = dossier.analysis_results.map((r, i) => {
+    const docFieldIds = (r.details ?? [])
+      .filter((d) => d.startsWith('doc:'))
+      .map((d) => d.slice(4));
+    const linkedDocs = docFieldIds
+      .map((fieldId) => dossier.documents.find((d) => d.id === `doc_${fieldId}`))
+      .filter((d): d is DocumentItem => !!d);
+    return {
+      id: r.id,
+      index: i + 1,
+      label: r.label,
+      result: r.details?.[0] ?? '',
+      message: r.message,
+      status: r.statut as 'ok' | 'warning' | 'error',
+      isEligibilityKO: r.statut === 'error',
+      linkedDocs,
+    };
+  });
 
   const handleConfirmDecision = async () => {
     if (!decision) return;
@@ -364,11 +391,12 @@ export function DossierDetail() {
                   key={q.id}
                   index={q.index}
                   label={q.label}
-                  answer={q.answer}
+                  result={q.result}
+                  message={q.message}
                   status={q.status}
-                  reasoning={q.reasoning}
                   isEligibilityKO={q.isEligibilityKO}
-                  sources={q.sources}
+                  linkedDocs={q.linkedDocs}
+                  onViewDoc={setViewerDoc}
                 />
               ))
             ) : (
