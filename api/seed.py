@@ -18,7 +18,7 @@ from api.models.dossier import (
     Dossier, Demandeur, DocumentItem, AIAnalysisResult,
     AIRecommendation, DossierStatus, DocumentStatus, RecommendationDecision,
 )
-from api.models.workflow import Workflow, WorkflowDocument, WorkflowValidation, WorkflowNode, AIConfig
+from api.models.workflow import Workflow, WorkflowDocument, WorkflowValidation, WorkflowNode, AIConfig, FormPage, FormBlock, FormCondition
 from api.models.user import User, UserRole
 from api.models.organization import Organization
 from api.storage import get_minio_client, ensure_bucket
@@ -212,10 +212,13 @@ async def seed():
 
     # ── Workflows ──────────────────────────────────────────────────────────────
     print("📋 Insertion des workflows...")
+
+    # Workflow 1 — Vérification CNI (tarif préférentiel)
     wf_tarif = Workflow(
-        nom="Instruction — demande de tarif préférentiel",
+        nom="Vérification CNI",
         description="Workflow d'instruction pour les demandes de tarif préférentiel énergie",
-        type="Tarif préférentiel", dossiers_count=127,
+        type="Tarif préférentiel",
+        dossiers_count=127,
         created_at=datetime(2026, 1, 15, 10, 0),
         updated_at=datetime(2026, 2, 20, 14, 30),
         ai_config=AIConfig(
@@ -267,24 +270,130 @@ async def seed():
         nodes=[
             WorkflowNode(id="n1", type="document_check", label="Vérification complétude", next="n2"),
             WorkflowNode(id="n2", type="identity_match", label="Correspondance identité", next="n3"),
-            WorkflowNode(id="n3", type="condition", label="Revenus ≤ plafond ?",
+            WorkflowNode(id="n3", type="condition", label="Revenus \u2264 plafond ?",
                          next=[{"condition": "oui", "node": "n4"}, {"condition": "non", "node": "n5"}]),
             WorkflowNode(id="n4", type="decision", label="Recommander approbation"),
             WorkflowNode(id="n5", type="decision", label="Recommander refus"),
         ],
+        formulaire_demande=[
+            FormPage(
+                id="main",
+                title="Formulaire de demande",
+                blocks=[
+                    FormBlock(id="b634ee1ef-06c4-4e12-bfb1-c09d09179496", type="short_answer",
+                              label="Nom et Prénom", required=True),
+                    FormBlock(id="bca40cb0b-30c9-4ea0-a746-fb513d626dd3", type="text",
+                              label="giuiug", required=False),
+                    FormBlock(
+                        id="c644f6e59-118f-409c-8277-eeecff200524", type="container",
+                        label="edede", required=False,
+                        conditions=[
+                            FormCondition(field_id="b634ee1ef-06c4-4e12-bfb1-c09d09179496",
+                                          operator="contains", value="paul"),
+                        ],
+                        blocks=[
+                            FormBlock(id="bf30c8c73-253a-4750-b8b0-34da85848dfb",
+                                      type="short_answer", label="dedeed", required=True),
+                        ],
+                    ),
+                    FormBlock(id="b76ca80f1-52d1-478b-bef8-1507fcc8ab21", type="file_upload",
+                              label="", required=True),
+                ],
+            ),
+        ],
     )
+
+    # Workflow 2 — Verif test (aide logement) avec pipeline d'automatisation IA
     wf_logement = Workflow(
-        nom="Instruction — demande d'aide au logement",
+        nom="Verif test",
         description="Workflow d'instruction pour les demandes d'aide au logement social",
-        type="Aide logement", dossiers_count=43,
+        type="Aide logement",
+        dossiers_count=43,
         created_at=datetime(2026, 1, 20, 9, 0),
         updated_at=datetime(2026, 2, 15, 11, 0),
         ai_config=AIConfig(
             model="claude-sonnet-4-6", temperature=0.1, seuil_confiance_auto=85,
             prompt_systeme="Tu es un expert en aides sociales au logement.",
         ),
-        documents=[], nodes=[],
+        documents=[],
+        nodes=[
+            WorkflowNode(
+                id="node_3782911d-e434-4a96-b12b-1954b6d17acf",
+                type="analysis",
+                label="Est-ce que les infos du form sont coh\u00e9rentes avec la CNI ?",
+                config={
+                    "instruction": (
+                        "V\u00e9rifie que les informations 'Nom', 'Pr\u00e9nom' et 'Date de naissance' "
+                        "du formulaire de demande soient coh\u00e9rents avec la CNI."
+                    ),
+                    "sources": [
+                        "bac5249c2-3f6e-4b25-b58a-29c79eb094d2",
+                        "b28d8cc12-ac16-4e19-bd39-d1edccfdd64a",
+                        "be9ef4e85-81e2-4897-bf64-446fb202cdbf",
+                        "b9ca1dc0f-0213-4e58-9f03-7243bb5735f4",
+                    ],
+                    "output_type": "boolean",
+                    "output_config": {},
+                },
+                next="node_fdb6d95e-58db-4ba2-9c11-0de2c9ef8de4",
+            ),
+            WorkflowNode(
+                id="node_fdb6d95e-58db-4ba2-9c11-0de2c9ef8de4",
+                type="analysis",
+                label="V\u00e9rification",
+                config={
+                    "instruction": (
+                        "Je veux que tu v\u00e9rifies la coh\u00e9rence entre les informations fournies "
+                        "par l'utilisateur dans le formulaire et le document fourni."
+                    ),
+                    "sources": [
+                        "bdd3d3b8e-b0c9-486e-9dfb-c272a537ef71",
+                        "b72558fa5-da1d-4a38-8931-a15b86f74ea7",
+                        "b267ae4a0-b484-4dc6-888c-c2bfdc36588f",
+                        "b69325e7a-4f8b-45d9-8c07-bc4f3cb1cc30",
+                    ],
+                    "output_type": "boolean",
+                    "output_config": {},
+                },
+                next=None,
+            ),
+        ],
+        formulaire_demande=[
+            FormPage(
+                id="main",
+                title="Renseignements personnels",
+                blocks=[
+                    FormBlock(id="bac5249c2-3f6e-4b25-b58a-29c79eb094d2", type="short_answer",
+                              label="Nom", required=True),
+                    FormBlock(id="be9ef4e85-81e2-4897-bf64-446fb202cdbf", type="short_answer",
+                              label="Pr\u00e9nom", required=True),
+                    FormBlock(id="b28d8cc12-ac16-4e19-bd39-d1edccfdd64a", type="date",
+                              label="Date de naissance", required=True),
+                    FormBlock(
+                        id="b9ca1dc0f-0213-4e58-9f03-7243bb5735f4",
+                        type="file_upload",
+                        label="T\u00e9l\u00e9chargez votre Carte Nationale D'identit\u00e9 pour la v\u00e9rification.",
+                        required=True,
+                    ),
+                ],
+            ),
+            FormPage(
+                id="page_c73815dc-2f6b-42b9-b3ef-7ee8eacceef2",
+                title="Verif logement",
+                blocks=[
+                    FormBlock(id="bdd3d3b8e-b0c9-486e-9dfb-c272a537ef71", type="short_answer",
+                              label="Adresse compl\u00e8te", required=True),
+                    FormBlock(id="b72558fa5-da1d-4a38-8931-a15b86f74ea7", type="short_answer",
+                              label="Code postal", required=True),
+                    FormBlock(id="b267ae4a0-b484-4dc6-888c-c2bfdc36588f", type="short_answer",
+                              label="Ville", required=True),
+                    FormBlock(id="b69325e7a-4f8b-45d9-8c07-bc4f3cb1cc30", type="file_upload",
+                              label="Document", required=True),
+                ],
+            ),
+        ],
     )
+
     await wf_tarif.insert()
     await wf_logement.insert()
     wf_ids = {"tarif": str(wf_tarif.id), "logement": str(wf_logement.id)}
