@@ -7,11 +7,11 @@ from pymongo import IndexModel, ASCENDING
 
 
 class DossierStatus(str, Enum):
-    en_cours = "en_cours"
+    boite_reception = "boite_reception"
+    en_instruction = "en_instruction"
     en_attente = "en_attente"
     approuve = "approuve"
     refuse = "refuse"
-    signale = "signale"
 
 
 class DocumentStatus(str, Enum):
@@ -67,8 +67,7 @@ class Dossier(Document):
     demandeur: Demandeur
     type: str
     workflow_id: str
-    statut: DossierStatus = DossierStatus.en_cours
-    confiance_ia: int = 0
+    statut: DossierStatus = DossierStatus.boite_reception
     derniere_maj: datetime = Field(default_factory=datetime.utcnow)
     instructeur: Optional[str] = None
     documents: list[DocumentItem] = Field(default_factory=list)
@@ -96,7 +95,6 @@ class DossierSummary(BaseModel):
     demandeur: Demandeur
     type: str
     statut: DossierStatus
-    confiance_ia: int
     derniere_maj: datetime
     instructeur: Optional[str]
     created_at: datetime

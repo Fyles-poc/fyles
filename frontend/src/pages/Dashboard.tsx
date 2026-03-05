@@ -1,10 +1,10 @@
 import { useNavigate } from 'react-router-dom';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from 'recharts';
-import { FolderOpen, Clock, CheckCircle, AlertTriangle, Plus, Check, X, Bell } from 'lucide-react';
+import { FolderOpen, Clock, CheckCircle, Inbox, Plus, Check, X, Bell } from 'lucide-react';
 import { api } from '../lib/api';
 import { useApi } from '../lib/useApi';
 import { LoadingSpinner, ErrorMessage } from '../components/ui/LoadingSpinner';
-import { StatusBadge, ConfidenceBadge } from '../components/ui/Badge';
+import { StatusBadge } from '../components/ui/Badge';
 
 function StatCard({
   label, value, icon: Icon, color, sub,
@@ -28,11 +28,11 @@ function StatCard({
 }
 
 const activityIcon: Record<string, React.ElementType> = {
-  check: Check, alert: AlertTriangle, plus: Plus, x: X,
+  check: Check, inbox: Inbox, plus: Plus, x: X,
 };
 const activityColor: Record<string, string> = {
   check: 'bg-emerald-100 text-emerald-600',
-  alert: 'bg-purple-100 text-purple-600',
+  inbox: 'bg-purple-100 text-purple-600',
   plus: 'bg-blue-100 text-blue-600',
   x: 'bg-red-100 text-red-600',
 };
@@ -65,10 +65,10 @@ export function Dashboard() {
 
       {/* Stat cards */}
       <div className="grid grid-cols-4 gap-4">
-        <StatCard label="Dossiers en cours" value={stats.dossiers_en_cours} icon={FolderOpen} color="bg-blue-500" sub="actifs ce mois" />
-        <StatCard label="En attente de validation" value={stats.en_attente_validation} icon={Clock} color="bg-amber-500" sub="décisions à confirmer" />
-        <StatCard label="Auto-approuvés" value={stats.auto_approuves} icon={CheckCircle} color="bg-emerald-500" sub="confiance IA ≥ 90%" />
-        <StatCard label="Signalés par l'IA" value={stats.signales_ia} icon={AlertTriangle} color="bg-purple-500" sub="nécessitent attention" />
+        <StatCard label="Boîte de réception" value={stats.boite_reception} icon={Inbox} color="bg-purple-500" sub="en attente de traitement" />
+        <StatCard label="En instruction" value={stats.dossiers_en_instruction} icon={FolderOpen} color="bg-blue-500" sub="workflow lancé" />
+        <StatCard label="En attente" value={stats.en_attente_validation} icon={Clock} color="bg-amber-500" sub="action externe requise" />
+        <StatCard label="Approuvés" value={stats.auto_approuves} icon={CheckCircle} color="bg-emerald-500" />
       </div>
 
       {/* Charts + Activity */}
@@ -127,7 +127,7 @@ export function Dashboard() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-slate-100">
-                  {['Référence', 'Demandeur', 'Type', 'Statut', 'Confiance IA', 'Instructeur'].map(h => (
+                  {['Référence', 'Demandeur', 'Type', 'Statut', 'Instructeur'].map(h => (
                     <th key={h} className="text-left px-5 py-3 text-xs font-medium text-slate-500">{h}</th>
                   ))}
                 </tr>
@@ -141,7 +141,6 @@ export function Dashboard() {
                     <td className="px-5 py-3 text-slate-700">{d.demandeur.prenom} {d.demandeur.nom}</td>
                     <td className="px-5 py-3 text-slate-500">{d.type}</td>
                     <td className="px-5 py-3"><StatusBadge type="dossier" status={d.statut} /></td>
-                    <td className="px-5 py-3"><ConfidenceBadge value={d.confiance_ia} /></td>
                     <td className="px-5 py-3 text-slate-500">{d.instructeur ?? '—'}</td>
                   </tr>
                 ))}
@@ -151,20 +150,20 @@ export function Dashboard() {
         </div>
       )}
 
-      {stats.signales_ia > 0 && (
+      {stats.boite_reception > 0 && (
         <div className="bg-purple-50 border border-purple-200 rounded-xl p-4">
           <div className="flex items-start gap-3">
             <Bell size={18} className="text-purple-600 mt-0.5 shrink-0" />
             <div>
               <p className="text-sm font-medium text-purple-800">
-                {stats.signales_ia} dossier(s) signalé(s) par l'IA
+                {stats.boite_reception} dossier(s) en attente de traitement
               </p>
               <p className="text-xs text-purple-600 mt-0.5">
-                Ces dossiers présentent des incohérences ou un niveau de confiance insuffisant pour une décision automatique.
+                Ces dossiers sont arrivés via le formulaire et n'ont pas encore été traités.
               </p>
-              <button onClick={() => navigate('/dossiers?statut=signale')}
+              <button onClick={() => navigate('/dossiers?statut=boite_reception')}
                 className="text-xs text-purple-700 font-medium hover:underline mt-1">
-                Consulter les dossiers signalés →
+                Consulter la boîte de réception →
               </button>
             </div>
           </div>
