@@ -15,7 +15,7 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 
 // ---- Types mirroring backend ----
 
-export type DossierStatus = 'en_cours' | 'en_attente' | 'approuve' | 'refuse' | 'signale';
+export type DossierStatus = 'boite_reception' | 'en_instruction' | 'en_attente' | 'approuve' | 'refuse';
 export type DocumentStatus = 'valide' | 'manquant' | 'invalide' | 'en_attente';
 export type RecommendationDecision = 'approuver' | 'refuser' | 'complement';
 
@@ -41,7 +41,7 @@ export interface AIRecommendation {
 
 export interface Dossier {
   id: string; reference: string; demandeur: Demandeur; type: string;
-  workflow_id: string; statut: DossierStatus; confiance_ia: number;
+  workflow_id: string; statut: DossierStatus;
   derniere_maj: string; instructeur?: string;
   documents: DocumentItem[]; analysis_results: AIAnalysisResult[];
   recommendation?: AIRecommendation; created_at: string;
@@ -147,10 +147,10 @@ export interface Organization {
 }
 
 export interface DashboardStats {
-  dossiers_en_cours: number;
+  boite_reception: number;
+  dossiers_en_instruction: number;
   en_attente_validation: number;
   auto_approuves: number;
-  signales_ia: number;
   status_distribution: { name: string; value: number; color: string }[];
   recent_activity: {
     id: string; dossier: string; action: string; time: string; icon: string;

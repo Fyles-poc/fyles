@@ -1,9 +1,9 @@
 export type DossierStatus =
-  | 'en_cours'
+  | 'boite_reception'
+  | 'en_instruction'
   | 'en_attente'
   | 'approuve'
-  | 'refuse'
-  | 'signale';
+  | 'refuse';
 
 export type DocumentStatus =
   | 'valide'

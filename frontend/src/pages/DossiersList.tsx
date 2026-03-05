@@ -1,19 +1,19 @@
 import { useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Search, Filter, Plus, ChevronRight, SortAsc } from 'lucide-react';
+import { Search, Filter, ChevronRight, SortAsc } from 'lucide-react';
 import { api } from '../lib/api';
 import { useApi } from '../lib/useApi';
 import { LoadingSpinner, ErrorMessage } from '../components/ui/LoadingSpinner';
-import { StatusBadge, ConfidenceBadge } from '../components/ui/Badge';
+import { StatusBadge } from '../components/ui/Badge';
 import type { DossierStatus } from '../lib/api';
 
 const statusFilters: { value: DossierStatus | 'tous'; label: string }[] = [
   { value: 'tous', label: 'Tous' },
-  { value: 'en_cours', label: 'En cours' },
+  { value: 'boite_reception', label: 'Boîte de réception' },
+  { value: 'en_instruction', label: 'En instruction' },
   { value: 'en_attente', label: 'En attente' },
   { value: 'approuve', label: 'Approuvés' },
   { value: 'refuse', label: 'Refusés' },
-  { value: 'signale', label: 'Signalés' },
 ];
 
 function formatDate(iso: string) {
@@ -39,20 +39,19 @@ export function DossiersList() {
     [statusFilter, search]
   );
 
+  const { data: workflows } = useApi(() => api.getWorkflows(), []);
+  const workflowNames: Record<string, string> = Object.fromEntries(
+    (workflows ?? []).map((w) => [w.id, w.nom])
+  );
+
   return (
     <div className="p-6 space-y-5">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-800">Dossiers</h1>
-          <p className="text-slate-500 text-sm mt-0.5">
-            {dossiers ? `${dossiers.length} dossier(s) trouvé(s)` : 'Chargement...'}
-          </p>
-        </div>
-        <button className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors">
-          <Plus size={16} />
-          Nouveau dossier
-        </button>
+      <div>
+        <h1 className="text-2xl font-bold text-slate-800">Dossiers</h1>
+        <p className="text-slate-500 text-sm mt-0.5">
+          {dossiers ? `${dossiers.length} dossier(s) trouvé(s)` : 'Chargement...'}
+        </p>
       </div>
 
       {/* Filters */}
@@ -97,7 +96,7 @@ export function DossiersList() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-100 bg-slate-50">
-                {['Référence', 'Type', 'Statut', 'Confiance IA', 'Dernière MàJ', 'Instructeur', ''].map(h => (
+                {['Référence', 'Workflow', 'Type', 'Statut', 'Dernière MàJ', 'Instructeur', ''].map(h => (
                   <th key={h} className="text-left px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">{h}</th>
                 ))}
               </tr>
@@ -117,19 +116,11 @@ export function DossiersList() {
                     <td className="px-5 py-4">
                       <span className="font-semibold text-blue-600">{d.reference}</span>
                     </td>
+                    <td className="px-5 py-4 text-slate-700 text-xs font-medium">
+                      {workflowNames[d.workflow_id] ?? <span className="text-slate-300">—</span>}
+                    </td>
                     <td className="px-5 py-4 text-slate-600">{d.type}</td>
                     <td className="px-5 py-4"><StatusBadge type="dossier" status={d.statut} /></td>
-                    <td className="px-5 py-4">
-                      <div className="flex items-center gap-2">
-                        <div className="w-16 bg-slate-100 rounded-full h-1.5">
-                          <div className={`h-1.5 rounded-full ${
-                            d.confiance_ia >= 80 ? 'bg-emerald-500' :
-                            d.confiance_ia >= 60 ? 'bg-amber-500' : 'bg-red-500'
-                          }`} style={{ width: `${d.confiance_ia}%` }} />
-                        </div>
-                        <ConfidenceBadge value={d.confiance_ia} />
-                      </div>
-                    </td>
                     <td className="px-5 py-4 text-slate-500 text-xs">{formatDate(d.derniere_maj)}</td>
                     <td className="px-5 py-4 text-slate-500">{d.instructeur ?? <span className="text-slate-300">—</span>}</td>
                     <td className="px-5 py-4">

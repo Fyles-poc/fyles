@@ -287,4 +287,10 @@ async def execute_workflow(workflow_id: str, dossier_reference: str):
     trace = await _run_nodes(nodes, start.id, dossier, form_fields_map, variables, cfg)
 
     success = all(e["status"] != "error" for e in trace)
+
+    # After execution, move dossier to "En instruction" so the instructor can review
+    dossier.statut = DossierStatus.en_instruction
+    dossier.derniere_maj = datetime.utcnow()
+    await dossier.save()
+
     return {"success": success, "execution_trace": trace}

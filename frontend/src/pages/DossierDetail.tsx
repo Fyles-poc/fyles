@@ -378,10 +378,6 @@ export function DossierDetail() {
               <p className="text-sm font-semibold text-slate-800">Formulaire d'instruction</p>
               <p className="text-xs text-slate-500">{instructionQuestions.length} question(s) à instruire</p>
             </div>
-            <div className="flex items-center gap-1.5 text-xs text-slate-500 bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-200">
-              <Sparkles size={13} className="text-blue-500" />
-              Pré-rempli par IA
-            </div>
           </div>
 
           <div className="flex-1 overflow-y-auto p-5">
@@ -456,7 +452,7 @@ export function DossierDetail() {
                 <p className="text-xs text-red-600">Point bloquant détecté</p>
               </div>
             )}
-            {(dossier.statut === 'en_cours' || dossier.statut === 'en_attente') ? (
+            {(dossier.statut === 'en_instruction' || dossier.statut === 'en_attente') ? (
               <>
                 <button
                   onClick={() => { setDecision('approuver'); setShowDecisionModal(true); }}

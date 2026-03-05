@@ -1158,6 +1158,26 @@ export function WorkflowDetail() {
     return () => document.removeEventListener('mousedown', close);
   }, [pageMenuIdx]);
 
+  const [workflowNom, setWorkflowNom] = useState('');
+  const [editingName, setEditingName] = useState(false);
+  const [nameValue, setNameValue] = useState('');
+  const nameInputRef = useRef<HTMLInputElement>(null);
+
+  const startEditName = () => {
+    setNameValue(workflowNom);
+    setEditingName(true);
+    setTimeout(() => nameInputRef.current?.select(), 0);
+  };
+
+  const saveNameEdit = async () => {
+    if (!editingName) return;
+    setEditingName(false);
+    const trimmed = nameValue.trim();
+    if (!trimmed || trimmed === workflowNom) return;
+    setWorkflowNom(trimmed);
+    await api.updateWorkflow(id!, { nom: trimmed });
+  };
+
   const [isSaving, setIsSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saved' | 'error'>('idle');
 
@@ -1168,6 +1188,7 @@ export function WorkflowDetail() {
 
   useEffect(() => {
     if (!workflow) return;
+    setWorkflowNom(workflow.nom);
     if (workflow.formulaire_demande && workflow.formulaire_demande.length > 0) {
       setDemandePages(workflow.formulaire_demande as unknown as FormPage[]);
     }
@@ -1216,7 +1237,29 @@ export function WorkflowDetail() {
               <ArrowLeft size={16} className="text-slate-500" />
             </button>
             <div>
-              <h1 className="text-xl font-bold text-slate-800">{workflow.nom}</h1>
+              <div className="flex items-center gap-1.5">
+                {editingName ? (
+                  <input
+                    ref={nameInputRef}
+                    value={nameValue}
+                    onChange={(e) => setNameValue(e.target.value)}
+                    onBlur={saveNameEdit}
+                    onKeyDown={(e) => { if (e.key === 'Enter') nameInputRef.current?.blur(); if (e.key === 'Escape') setEditingName(false); }}
+                    className="text-xl font-bold text-slate-800 bg-transparent border-b-2 border-blue-500 outline-none w-72"
+                    autoFocus
+                  />
+                ) : (
+                  <>
+                    <h1 className="text-xl font-bold text-slate-800">{workflowNom}</h1>
+                    <button
+                      onClick={startEditName}
+                      className="p-1 hover:bg-slate-100 rounded text-slate-400 hover:text-slate-600 transition-colors"
+                    >
+                      <Pencil size={13} />
+                    </button>
+                  </>
+                )}
+              </div>
               <p className="text-sm text-slate-500">{workflow.description}</p>
             </div>
           </div>

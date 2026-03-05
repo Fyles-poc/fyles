@@ -13,11 +13,11 @@ async def get_stats():
         counts[d.statut.value] += 1
 
     status_distribution = [
-        {"name": "En cours", "value": counts["en_cours"], "color": "#3b82f6"},
+        {"name": "Boîte de réception", "value": counts["boite_reception"], "color": "#8b5cf6"},
+        {"name": "En instruction", "value": counts["en_instruction"], "color": "#3b82f6"},
         {"name": "En attente", "value": counts["en_attente"], "color": "#f59e0b"},
         {"name": "Approuvés", "value": counts["approuve"], "color": "#10b981"},
         {"name": "Refusés", "value": counts["refuse"], "color": "#ef4444"},
-        {"name": "Signalés", "value": counts["signale"], "color": "#8b5cf6"},
     ]
 
     recent = sorted(all_dossiers, key=lambda d: d.derniere_maj, reverse=True)[:5]
@@ -32,17 +32,11 @@ async def get_stats():
         for d in recent
     ]
 
-    # Auto-approved = approuvé with confiance_ia >= 90
-    auto_approuves = sum(
-        1 for d in all_dossiers
-        if d.statut == DossierStatus.approuve and d.confiance_ia >= 90
-    )
-
     return {
-        "dossiers_en_cours": counts["en_cours"],
+        "boite_reception": counts["boite_reception"],
+        "dossiers_en_instruction": counts["en_instruction"],
         "en_attente_validation": counts["en_attente"],
-        "auto_approuves": auto_approuves,
-        "signales_ia": counts["signale"],
+        "auto_approuves": counts["approuve"],
         "status_distribution": status_distribution,
         "recent_activity": recent_activity,
     }
@@ -50,22 +44,22 @@ async def get_stats():
 
 def _activity_label(d: Dossier) -> str:
     labels = {
+        "boite_reception": "Dossier reçu",
+        "en_instruction": "Dossier en cours d'instruction",
+        "en_attente": "Dossier en attente de complément",
         "approuve": f"Dossier approuvé{' par ' + d.instructeur if d.instructeur else ''}",
         "refuse": f"Dossier refusé{' par ' + d.instructeur if d.instructeur else ''}",
-        "signale": f"Dossier signalé par l'IA (confiance {d.confiance_ia}%)",
-        "en_cours": "Dossier en cours d'instruction",
-        "en_attente": "Dossier en attente de complément",
     }
     return labels.get(d.statut.value, "Mise à jour du dossier")
 
 
 def _activity_icon(d: Dossier) -> str:
     icons = {
+        "boite_reception": "inbox",
+        "en_instruction": "plus",
+        "en_attente": "plus",
         "approuve": "check",
         "refuse": "x",
-        "signale": "alert",
-        "en_cours": "plus",
-        "en_attente": "plus",
     }
     return icons.get(d.statut.value, "plus")
 
