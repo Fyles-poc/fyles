@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import {
   Zap, Paperclip, Bot, GitBranch, CheckCircle,
-  Plus, Trash2, Settings2, X, ChevronDown, Upload, Files,
+  Plus, Trash2, Settings2, X, Upload, Files,
   AlignLeft, AlignJustify, Hash, Mail, Phone, Calendar, List,
   ChevronDownSquare, CheckSquare, ShieldAlert,
 } from 'lucide-react';
@@ -589,11 +589,19 @@ function NodeCard({
 
 function Arrow() {
   return (
-    <div className="flex justify-center py-1">
-      <div className="flex flex-col items-center gap-0">
-        <div className="w-px h-5 bg-slate-300" />
-        <ChevronDown size={14} className="text-slate-400 -mt-1" />
-      </div>
+    <div className="flex justify-center" style={{ height: '36px', position: 'relative' }}>
+      <svg width="32" height="36" viewBox="0 0 32 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+        {/* Ligne avec dégradé */}
+        <defs>
+          <linearGradient id="arrowGrad" x1="16" y1="0" x2="16" y2="36" gradientUnits="userSpaceOnUse">
+            <stop offset="0%" stopColor="#94a3b8" stopOpacity="0.5" />
+            <stop offset="100%" stopColor="#64748b" stopOpacity="0.9" />
+          </linearGradient>
+        </defs>
+        <line x1="16" y1="0" x2="16" y2="26" stroke="url(#arrowGrad)" strokeWidth="1.5" />
+        {/* Pointe de flèche filled */}
+        <path d="M9 22 L16 33 L23 22" fill="#64748b" fillOpacity="0.85" />
+      </svg>
     </div>
   );
 }
@@ -611,6 +619,62 @@ export function InstructionWorkflowBuilder({
 }) {
   const [configuringId, setConfiguringId] = useState<string | null>(null);
   const [showAddPicker, setShowAddPicker] = useState(false);
+
+  // ── Pan / Zoom ──────────────────────────────────────────────────────────────
+  const canvasRef = useRef<HTMLDivElement>(null);
+  const isPanning = useRef(false);
+  const panStart = useRef({ x: 0, y: 0 });
+  const panOrigin = useRef({ x: 0, y: 0 });
+  const zoomRef = useRef(1);
+  const panRef = useRef({ x: 60, y: 40 });
+  const [transform, setTransform] = useState({ zoom: 1, pan: { x: 60, y: 40 } });
+  const [isCursorGrabbing, setIsCursorGrabbing] = useState(false);
+  const { zoom, pan } = transform;
+
+  const handleWheel = (e: React.WheelEvent) => {
+    e.preventDefault();
+    if (!canvasRef.current) return;
+    const scaleBy = 1.09;
+    const direction = e.deltaY < 0 ? scaleBy : 1 / scaleBy;
+    const prevZoom = zoomRef.current;
+    const newZoom = Math.min(Math.max(prevZoom * direction, 0.2), 3);
+    const rect = canvasRef.current.getBoundingClientRect();
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+    const newPan = {
+      x: mouseX - (mouseX - panRef.current.x) * (newZoom / prevZoom),
+      y: mouseY - (mouseY - panRef.current.y) * (newZoom / prevZoom),
+    };
+    zoomRef.current = newZoom;
+    panRef.current = newPan;
+    setTransform({ zoom: newZoom, pan: newPan });
+  };
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (e.button !== 0) return;
+    const target = e.target as HTMLElement;
+    if (target.closest('button, input, textarea, select, a')) return;
+    isPanning.current = true;
+    panStart.current = { x: e.clientX, y: e.clientY };
+    panOrigin.current = { ...panRef.current };
+    setIsCursorGrabbing(true);
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (!isPanning.current) return;
+    const newPan = {
+      x: panOrigin.current.x + e.clientX - panStart.current.x,
+      y: panOrigin.current.y + e.clientY - panStart.current.y,
+    };
+    panRef.current = newPan;
+    setTransform((t) => ({ ...t, pan: newPan }));
+  };
+
+  const handleMouseUp = () => {
+    if (!isPanning.current) return;
+    isPanning.current = false;
+    setIsCursorGrabbing(false);
+  };
 
   const formFields = collectFormFields(demandeBlocks);
 
@@ -672,8 +736,25 @@ export function InstructionWorkflowBuilder({
   return (
     <div className="flex h-full">
       {/* Canvas */}
-      <div className="flex-1 overflow-y-auto p-8 bg-slate-50">
-        <div className="max-w-lg mx-auto">
+      <div
+        ref={canvasRef}
+        className="flex-1 overflow-hidden relative select-none"
+        style={{
+          backgroundColor: '#dce6f5',
+          backgroundImage: 'radial-gradient(circle, #a0b4cc 1px, transparent 1px)',
+          backgroundSize: `${24 * zoom}px ${24 * zoom}px`,
+          backgroundPosition: `${pan.x}px ${pan.y}px`,
+          cursor: isCursorGrabbing ? 'grabbing' : 'grab',
+        }}
+        onWheel={handleWheel}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseUp}
+      >
+        {/* Transformable content */}
+        <div style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, transformOrigin: '0 0', width: 'max-content' }}>
+        <div style={{ width: '480px', padding: '40px 24px' }}>
           {/* Info banner */}
           <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-6 flex items-start gap-3">
             <Bot size={18} className="text-blue-500 shrink-0 mt-0.5" />
@@ -744,6 +825,29 @@ export function InstructionWorkflowBuilder({
               Ajouter un nœud
             </button>
           </div>
+        </div>
+        </div>{/* /transform */}
+
+        {/* Zoom controls */}
+        <div className="absolute bottom-4 right-4 flex flex-col items-center gap-0.5 bg-white rounded-xl shadow-lg border border-slate-200 p-1 z-10">
+          <button
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={() => { const nz = Math.min(zoomRef.current * 1.25, 3); zoomRef.current = nz; setTransform(t => ({ ...t, zoom: nz })); }}
+            className="w-8 h-8 flex items-center justify-center hover:bg-slate-100 rounded-lg text-slate-600 text-xl font-light leading-none transition-colors"
+          >+</button>
+          <span className="text-[11px] text-slate-400 px-1 tabular-nums">{Math.round(zoom * 100)}%</span>
+          <button
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={() => { const nz = Math.max(zoomRef.current / 1.25, 0.2); zoomRef.current = nz; setTransform(t => ({ ...t, zoom: nz })); }}
+            className="w-8 h-8 flex items-center justify-center hover:bg-slate-100 rounded-lg text-slate-600 text-xl font-light leading-none transition-colors"
+          >−</button>
+          <div className="w-5 h-px bg-slate-200 my-0.5" />
+          <button
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={() => { zoomRef.current = 1; panRef.current = { x: 60, y: 40 }; setTransform({ zoom: 1, pan: { x: 60, y: 40 } }); }}
+            className="w-8 h-8 flex items-center justify-center hover:bg-slate-100 rounded-lg text-slate-400 text-base transition-colors"
+            title="Réinitialiser la vue"
+          >⊙</button>
         </div>
       </div>
 
