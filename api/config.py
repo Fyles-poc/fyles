@@ -12,6 +12,8 @@ class Settings(BaseSettings):
     minio_bucket: str = "fyles"
     minio_secure: bool = False
 
+    anthropic_api_key: str = ""
+
     model_config = {"env_file": ".env", "extra": "ignore"}
 
 

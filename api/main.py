@@ -9,7 +9,7 @@ from api.models.dossier import Dossier
 from api.models.workflow import Workflow
 from api.models.user import User
 from api.models.organization import Organization
-from api.routers import dossiers, workflows, settings, dashboard
+from api.routers import dossiers, workflows, settings, dashboard, workflow_execution
 
 
 @asynccontextmanager
@@ -43,6 +43,7 @@ app.include_router(dossiers.router, prefix="/api")
 app.include_router(workflows.router, prefix="/api")
 app.include_router(settings.router, prefix="/api")
 app.include_router(dashboard.router, prefix="/api")
+app.include_router(workflow_execution.router, prefix="/api")
 
 
 @app.get("/health")

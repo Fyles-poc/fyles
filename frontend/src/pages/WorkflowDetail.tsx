@@ -8,12 +8,14 @@ import {
   Upload, Files, Heading1, X, ShieldAlert, Search, Layers,
 } from 'lucide-react';
 import { api } from '../lib/api';
+import type { WorkflowNode } from '../lib/api';
 import { useApi } from '../lib/useApi';
 import { LoadingSpinner, ErrorMessage } from '../components/ui/LoadingSpinner';
+import { InstructionWorkflowBuilder } from '../components/InstructionWorkflowBuilder';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
-type TabId = 'formulaire_demande' | 'formulaire_instruction';
+type TabId = 'formulaire_demande' | 'workflow';
 
 type FieldType =
   | 'header' | 'text'
@@ -1113,7 +1115,7 @@ export function WorkflowDetail() {
   const [activeTab, setActiveTab] = useState<TabId>('formulaire_demande');
 
   const [demandeBlocks, setDemandeBlocks] = useState<FormBlock[]>([]);
-  const [instructionBlocks, setInstructionBlocks] = useState<FormBlock[]>([]);
+  const [instructionNodes, setInstructionNodes] = useState<WorkflowNode[]>([]);
 
   const [isSaving, setIsSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saved' | 'error'>('idle');
@@ -1129,9 +1131,8 @@ export function WorkflowDetail() {
     if (demBlocks && demBlocks.length > 0) {
       setDemandeBlocks(demBlocks as unknown as FormBlock[]);
     }
-    const instBlocks = workflow.formulaire_instruction?.[0]?.blocks;
-    if (instBlocks && instBlocks.length > 0) {
-      setInstructionBlocks(instBlocks as unknown as FormBlock[]);
+    if (workflow.nodes && workflow.nodes.length > 0) {
+      setInstructionNodes(workflow.nodes as unknown as WorkflowNode[]);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workflow?.id]);
@@ -1142,7 +1143,7 @@ export function WorkflowDetail() {
     try {
       await api.updateWorkflow(id!, {
         formulaire_demande: [{ id: 'main', title: 'Formulaire de demande', blocks: demandeBlocks }],
-        formulaire_instruction: [{ id: 'main', title: "Formulaire d'instruction", blocks: instructionBlocks }],
+        nodes: instructionNodes,
       });
       setSaveStatus('saved');
       setTimeout(() => setSaveStatus('idle'), 2500);
@@ -1159,7 +1160,7 @@ export function WorkflowDetail() {
 
   const tabs: { id: TabId; label: string; icon: React.ElementType }[] = [
     { id: 'formulaire_demande', label: 'Formulaire de demande', icon: FileText },
-    { id: 'formulaire_instruction', label: "Formulaire d'instruction", icon: GitBranch },
+    { id: 'workflow', label: 'Workflow', icon: GitBranch },
   ];
 
   return (
@@ -1238,11 +1239,11 @@ export function WorkflowDetail() {
             setBlocks={setDemandeBlocks}
           />
         )}
-        {activeTab === 'formulaire_instruction' && (
-          <FormBuilder
-            blocks={instructionBlocks}
-            isInstruction={true}
-            setBlocks={setInstructionBlocks}
+        {activeTab === 'workflow' && (
+          <InstructionWorkflowBuilder
+            nodes={instructionNodes}
+            setNodes={setInstructionNodes}
+            demandeBlocks={demandeBlocks}
           />
         )}
       </div>

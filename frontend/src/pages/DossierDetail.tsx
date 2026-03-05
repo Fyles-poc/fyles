@@ -6,13 +6,13 @@ import {
   MessageSquare, Download, Eye, X,
   ClipboardList, ExternalLink, FileText, Image, File,
   Sparkles, ShieldAlert, ChevronDown, ChevronUp,
-  CheckSquare,
+  CheckSquare, Bot, Play,
 } from 'lucide-react';
 import { api } from '../lib/api';
 import { useApi } from '../lib/useApi';
 import { LoadingSpinner, ErrorMessage } from '../components/ui/LoadingSpinner';
 import { StatusBadge } from '../components/ui/Badge';
-import type { DocumentItem, RecommendationDecision, FormBlock } from '../lib/api';
+import type { DocumentItem, RecommendationDecision, FormBlock, WorkflowExecutionResult } from '../lib/api';
 
 // ── File tree icon ─────────────────────────────────────────────────────────
 
@@ -139,6 +139,9 @@ export function DossierDetail() {
   const [decision, setDecision] = useState<RecommendationDecision | null>(null);
   const [commentaire, setCommentaire] = useState('');
   const [saving, setSaving] = useState(false);
+  const [execStatus, setExecStatus] = useState<'idle' | 'running' | 'done' | 'error'>('idle');
+  const [execResult, setExecResult] = useState<WorkflowExecutionResult | null>(null);
+  const [showExecPanel, setShowExecPanel] = useState(false);
 
   const { data: dossier, loading, error, refetch } = useApi(
     () => api.getDossier(reference!),
@@ -205,6 +208,24 @@ export function DossierDetail() {
 
   const hasKO = instructionQuestions.some((q) => q.isEligibilityKO);
 
+  const handleLaunchAnalysis = async () => {
+    if (!dossier.workflow_id) return;
+    setExecStatus('running');
+    setShowExecPanel(true);
+    setExecResult(null);
+    try {
+      const result = await api.executeWorkflow(dossier.workflow_id, dossier.reference);
+      setExecResult(result);
+      setExecStatus('done');
+      await refetch();
+    } catch (e) {
+      setExecStatus('error');
+      setExecResult({ success: false, error: String(e), execution_trace: [] });
+    }
+  };
+
+  const hasWorkflowNodes = (workflow?.nodes?.length ?? 0) > 0;
+
   return (
     <div className="flex flex-col h-screen overflow-hidden">
       {/* Top bar */}
@@ -232,6 +253,35 @@ export function DossierDetail() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {hasWorkflowNodes && (
+            <button
+              onClick={handleLaunchAnalysis}
+              disabled={execStatus === 'running'}
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg font-medium transition-colors disabled:opacity-70 ${
+                execStatus === 'running'
+                  ? 'bg-blue-100 text-blue-600 border border-blue-200'
+                  : execStatus === 'done'
+                  ? 'bg-emerald-100 text-emerald-700 border border-emerald-200 hover:bg-emerald-200'
+                  : 'bg-blue-600 text-white hover:bg-blue-700'
+              }`}
+            >
+              {execStatus === 'running' ? (
+                <><Bot size={14} className="animate-pulse" />Analyse en cours…</>
+              ) : execStatus === 'done' ? (
+                <><CheckCircle size={14} />Voir les résultats</>
+              ) : (
+                <><Play size={14} />Lancer l'analyse</>
+              )}
+            </button>
+          )}
+          {execResult && (
+            <button
+              onClick={() => setShowExecPanel(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors text-slate-600"
+            >
+              <Bot size={14} />Résultats
+            </button>
+          )}
           <button className="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors text-slate-600">
             <Download size={14} />Exporter
           </button>
@@ -568,6 +618,80 @@ export function DossierDetail() {
                 }`}
               >
                 {saving ? 'Enregistrement...' : 'Confirmer'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Execution results panel ── */}
+      {showExecPanel && execResult && (
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-end">
+          <div className="bg-white h-full w-full max-w-xl flex flex-col shadow-2xl">
+            {/* Header */}
+            <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-blue-100 flex items-center justify-center">
+                  <Bot size={16} className="text-blue-600" />
+                </div>
+                <div>
+                  <p className="text-sm font-bold text-slate-800">Résultats de l'analyse automatique</p>
+                  <p className="text-xs text-slate-500">{dossier.reference}</p>
+                </div>
+              </div>
+              <button onClick={() => setShowExecPanel(false)} className="p-1.5 hover:bg-slate-100 rounded-lg">
+                <X size={16} className="text-slate-400" />
+              </button>
+            </div>
+
+            {/* Status banner */}
+            <div className={`px-5 py-3 flex items-center gap-2 shrink-0 ${execResult.success ? 'bg-emerald-50 border-b border-emerald-100' : 'bg-red-50 border-b border-red-100'}`}>
+              {execResult.success
+                ? <><CheckCircle size={15} className="text-emerald-600" /><span className="text-sm font-medium text-emerald-700">Pipeline exécuté avec succès</span></>
+                : <><XCircle size={15} className="text-red-600" /><span className="text-sm font-medium text-red-700">{execResult.error ?? 'Erreur lors de l\'exécution'}</span></>
+              }
+            </div>
+
+            {/* Trace */}
+            <div className="flex-1 overflow-y-auto p-5 space-y-3">
+              {execResult.execution_trace.map((entry, i) => {
+                const isOk = entry.status === 'ok';
+                const isError = entry.status === 'error';
+                return (
+                  <div key={entry.node_id} className={`border rounded-xl overflow-hidden ${isError ? 'border-red-200' : 'border-slate-200'}`}>
+                    <div className={`px-4 py-2.5 flex items-center gap-2.5 ${isError ? 'bg-red-50' : 'bg-slate-50'}`}>
+                      <span className="text-xs font-mono text-slate-400 shrink-0">{String(i + 1).padStart(2, '0')}</span>
+                      {isOk
+                        ? <CheckCircle size={14} className="text-emerald-500 shrink-0" />
+                        : isError
+                        ? <XCircle size={14} className="text-red-500 shrink-0" />
+                        : <AlertTriangle size={14} className="text-amber-500 shrink-0" />
+                      }
+                      <span className="text-xs font-semibold text-slate-700 flex-1">{entry.label || entry.type}</span>
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                        isOk ? 'bg-emerald-100 text-emerald-700' :
+                        isError ? 'bg-red-100 text-red-700' :
+                        'bg-amber-100 text-amber-700'
+                      }`}>{entry.status}</span>
+                    </div>
+                    {entry.output && Object.keys(entry.output).length > 0 && (
+                      <div className="px-4 py-3 bg-white">
+                        <pre className="text-xs text-slate-600 whitespace-pre-wrap font-mono overflow-x-auto max-h-48">
+                          {JSON.stringify(entry.output, null, 2)}
+                        </pre>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+              {execResult.execution_trace.length === 0 && (
+                <p className="text-sm text-slate-400 text-center py-8">Aucun nœud exécuté.</p>
+              )}
+            </div>
+
+            <div className="px-5 py-3 border-t border-slate-200 shrink-0">
+              <button onClick={() => setShowExecPanel(false)} className="w-full py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 rounded-lg transition-colors border border-slate-200">
+                Fermer
               </button>
             </div>
           </div>

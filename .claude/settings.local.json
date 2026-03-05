@@ -25,7 +25,18 @@
       "Bash(curl -s -X POST http://localhost:8000/api/dossiers/submit -F \"workflow_id=69a6a27eb4cfd9b291def40c\" -F \"reponses={\"\"test\"\":\"\"valeur\"\"}\" -w \"\\\\nHTTP:%{http_code}\")",
       "Bash(curl -s -X POST http://localhost:8000/api/dossiers/submit -F \"workflow_id=69a6a27eb4cfd9b291def40c\" -F \"reponses={\"\"test\"\":\"\"valeur\"\"}\")",
       "Bash(poetry run python -c \"import sys; print\\(sys.executable\\)\")",
-      "Bash(curl -s -X POST http://localhost:8000/api/dossiers/submit -F \"workflow_id=69a820414f4e1055534e0956\" -F \"reponses={\"\"b2311a954\"\":\"\"Jean Dupont\"\"}\" -w \"\\\\nHTTP:%{http_code}\")"
+      "Bash(curl -s -X POST http://localhost:8000/api/dossiers/submit -F \"workflow_id=69a820414f4e1055534e0956\" -F \"reponses={\"\"b2311a954\"\":\"\"Jean Dupont\"\"}\" -w \"\\\\nHTTP:%{http_code}\")",
+      "Bash(xargs wc -l)",
+      "Bash(c:/Users/viala/Documents/fyles/fyles/env/Scripts/pip install anthropic)",
+      "Bash(npx tsc --noEmit)",
+      "Bash(env/Scripts/python -c \"from api.routers import workflow_execution\")",
+      "Bash(env/Scripts/python -c \"from api.main import app\")",
+      "Bash(node -e \"const l = require\\(''./node_modules/lucide-react/dist/cjs/lucide-react.js''\\); console.log\\(''Settings2:'', !!l.Settings2, ''Bot:'', !!l.Bot, ''Paperclip:'', !!l.Paperclip, ''Play:'', !!l.Play\\)\")",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(d.get\\(''version'',''?''\\)\\)\")",
+      "Bash(npx vite build)",
+      "Bash(env/Scripts/python -m py_compile api/routers/workflow_execution.py)",
+      "Bash(env/Scripts/python -c \":*)",
+      "Bash(\"C:/Users/viala/AppData/Local/pypoetry/Cache/virtualenvs/fyles-7mGUi_fS-py3.12/Scripts/pip\" install anthropic)"
     ]
   }
 }
