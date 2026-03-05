@@ -2,6 +2,7 @@ const BASE = 'http://localhost:8000/api';
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
+    cache: 'no-store',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
     ...options,
   });
@@ -181,6 +182,17 @@ export const api = {
     body: JSON.stringify(payload),
   }),
 
+  updateDossierReponses: (reference: string, payload: Record<string, unknown>) =>
+    request<Dossier>(`/dossiers/${reference}/reponses`, { method: 'PATCH', body: JSON.stringify(payload) }),
+  replaceDossierDocument: (reference: string, docId: string, file: File) => {
+    const fd = new FormData();
+    fd.append('file', file);
+    return fetch(`${BASE}/dossiers/${reference}/documents/${docId}`, { cache: 'no-store', method: 'PUT', body: fd }).then(async (r) => {
+      if (!r.ok) { const t = await r.text(); throw new Error(t); }
+      return r.json() as Promise<Dossier>;
+    });
+  },
+
   // Documents
   getDocumentContentUrl: (reference: string, docId: string, download = false) =>
     `${BASE}/dossiers/${reference}/documents/${docId}/content${download ? '?download=true' : ''}`,
@@ -195,6 +207,11 @@ export const api = {
   deleteWorkflow: (id: string) => request<void>(`/workflows/${id}`, { method: 'DELETE' }),
   executeWorkflow: (workflowId: string, dossierReference: string) =>
     request<WorkflowExecutionResult>(`/workflows/${workflowId}/execute/${dossierReference}`, { method: 'POST' }),
+  executeWorkflowNode: (workflowId: string, dossierReference: string, nodeId: string) =>
+    request<{ success: boolean; node_id: string; output?: Record<string, unknown>; error?: string }>(
+      `/workflows/${workflowId}/execute/${dossierReference}/node/${nodeId}`,
+      { method: 'POST' }
+    ),
 
   // Dossier submit (multipart)
   submitDossier: (formData: FormData) =>

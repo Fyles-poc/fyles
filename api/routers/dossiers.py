@@ -159,6 +159,61 @@ async def submit_dossier(request: Request):
     return {"reference": reference, "id": str(dossier.id)}
 
 
+@router.patch("/{reference}/reponses", response_model=Dossier)
+async def patch_reponses(reference: str, request: Request):
+    dossier = await Dossier.find_one(Dossier.reference == reference)
+    if not dossier:
+        raise HTTPException(status_code=404, detail=f"Dossier {reference} introuvable")
+    payload = await request.json()
+    dossier.reponses.update(payload)
+    dossier.derniere_maj = datetime.utcnow()
+    await dossier.save()
+    return dossier
+
+
+@router.put("/{reference}/documents/{doc_id}", response_model=Dossier)
+async def replace_document(reference: str, doc_id: str, request: Request):
+    dossier = await Dossier.find_one(Dossier.reference == reference)
+    if not dossier:
+        raise HTTPException(status_code=404, detail=f"Dossier {reference} introuvable")
+    doc = next((d for d in dossier.documents if d.id == doc_id), None)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document introuvable")
+
+    form = await request.form()
+    file = form.get("file")
+    if not file or not hasattr(file, "filename") or not file.filename:
+        raise HTTPException(status_code=422, detail="Fichier requis")
+
+    cfg = get_settings()
+    mc = get_minio_client(cfg)
+    ensure_bucket(mc, cfg.minio_bucket)
+
+    content = await file.read()
+    content_type = file.content_type or "application/octet-stream"
+    safe_name = file.filename.replace(" ", "_")
+    minio_key = f"{dossier.workflow_id}/{reference}/{doc_id}_{safe_name}"
+
+    if doc.minio_key and doc.minio_key != minio_key:
+        try:
+            mc.remove_object(cfg.minio_bucket, doc.minio_key)
+        except Exception:
+            pass
+
+    mc.put_object(cfg.minio_bucket, minio_key, io.BytesIO(content), length=len(content), content_type=content_type)
+    size_str = f"{len(content) / 1024:.1f} Ko" if len(content) >= 1024 else f"{len(content)} o"
+
+    doc.nom = file.filename
+    doc.minio_key = minio_key
+    doc.content_type = content_type
+    doc.file_size = size_str
+    doc.statut = DocumentStatus.en_attente
+    doc.uploaded_at = datetime.utcnow().isoformat()
+    dossier.derniere_maj = datetime.utcnow()
+    await dossier.save()
+    return dossier
+
+
 @router.post("", response_model=Dossier, status_code=201)
 async def create_dossier(dossier: Dossier):
     await dossier.insert()

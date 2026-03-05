@@ -1192,9 +1192,7 @@ export function WorkflowDetail() {
     if (workflow.formulaire_demande && workflow.formulaire_demande.length > 0) {
       setDemandePages(workflow.formulaire_demande as unknown as FormPage[]);
     }
-    if (workflow.nodes && workflow.nodes.length > 0) {
-      setInstructionNodes(workflow.nodes as unknown as WorkflowNode[]);
-    }
+    setInstructionNodes((workflow.nodes ?? []) as unknown as WorkflowNode[]);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workflow?.id]);
 
