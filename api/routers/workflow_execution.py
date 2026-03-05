@@ -185,8 +185,11 @@ async def _run_analysis_node(
     )
     if dossier.analysis_results is None:
         dossier.analysis_results = []
-    dossier.analysis_results = [r for r in dossier.analysis_results if r.id != entry_id]
-    dossier.analysis_results.append(ai_entry)
+    idx = next((i for i, r in enumerate(dossier.analysis_results) if r.id == entry_id), None)
+    if idx is not None:
+        dossier.analysis_results[idx] = ai_entry
+    else:
+        dossier.analysis_results.append(ai_entry)
     dossier.derniere_maj = datetime.utcnow()
     await dossier.save()
 
@@ -282,6 +285,10 @@ async def execute_workflow(workflow_id: str, dossier_reference: str):
         all_blocks.extend(page_dict.get("blocks", []))
     form_fields_map = _collect_form_fields(all_blocks)
 
+    # Clear all automatic analysis results from previous runs so the re-run starts clean
+    dossier.analysis_results = [r for r in (dossier.analysis_results or []) if not r.id.startswith("auto_")]
+    await dossier.save()
+
     start = next((n for n in nodes if n.type == "trigger"), nodes[0])
     variables: dict = {}
     trace = await _run_nodes(nodes, start.id, dossier, form_fields_map, variables, cfg)
@@ -294,3 +301,38 @@ async def execute_workflow(workflow_id: str, dossier_reference: str):
     await dossier.save()
 
     return {"success": success, "execution_trace": trace}
+
+
+@router.post("/{workflow_id}/execute/{dossier_reference}/node/{node_id}")
+async def execute_single_node(workflow_id: str, dossier_reference: str, node_id: str):
+    cfg = get_settings()
+
+    workflow = await Workflow.get(workflow_id)
+    if not workflow:
+        raise HTTPException(status_code=404, detail="Workflow introuvable")
+
+    dossier = await Dossier.find_one(Dossier.reference == dossier_reference)
+    if not dossier:
+        raise HTTPException(status_code=404, detail=f"Dossier {dossier_reference} introuvable")
+
+    node = next((n for n in workflow.nodes if n.id == node_id), None)
+    if not node:
+        raise HTTPException(status_code=404, detail=f"Nœud {node_id} introuvable dans ce workflow")
+
+    if node.type != "analysis":
+        raise HTTPException(status_code=400, detail="Seuls les nœuds d'analyse peuvent être exécutés individuellement")
+
+    if not cfg.anthropic_api_key:
+        raise HTTPException(status_code=500, detail="ANTHROPIC_API_KEY non configurée dans les paramètres serveur")
+
+    all_blocks: list = []
+    for page in workflow.formulaire_demande:
+        page_dict = page.model_dump() if hasattr(page, "model_dump") else page
+        all_blocks.extend(page_dict.get("blocks", []))
+    form_fields_map = _collect_form_fields(all_blocks)
+
+    try:
+        output = await _run_analysis_node(node, node.config or {}, dossier, form_fields_map, cfg.anthropic_api_key)
+        return {"success": True, "node_id": node_id, "output": output}
+    except Exception as exc:
+        return {"success": False, "node_id": node_id, "error": str(exc), "output": {}}

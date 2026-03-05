@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, CheckCircle, XCircle,
@@ -6,12 +6,13 @@ import {
   MessageSquare, Download, Eye, X,
   ClipboardList, ExternalLink, FileText, Image, File,
   Sparkles, ShieldAlert, ChevronDown, ChevronUp,
-  CheckSquare, Bot, Play,
+  CheckSquare, Bot, Play, Pencil, Save, ArrowLeftRight, Loader2, Trash2,
 } from 'lucide-react';
 import { api } from '../lib/api';
 import { useApi } from '../lib/useApi';
 import { LoadingSpinner, ErrorMessage } from '../components/ui/LoadingSpinner';
 import { StatusBadge } from '../components/ui/Badge';
+import { ConfirmModal } from '../components/ui/ConfirmModal';
 import type { DocumentItem, RecommendationDecision, FormBlock, WorkflowExecutionResult } from '../lib/api';
 
 // ── File tree icon ─────────────────────────────────────────────────────────
@@ -66,6 +67,8 @@ function InstructionCard({
   isEligibilityKO,
   linkedDocs,
   onViewDoc,
+  onRun,
+  isRunning,
 }: {
   index: number;
   label: string;
@@ -75,6 +78,8 @@ function InstructionCard({
   isEligibilityKO: boolean;
   linkedDocs: DocumentItem[];
   onViewDoc: (doc: DocumentItem) => void;
+  onRun?: () => void;
+  isRunning?: boolean;
 }) {
   const [analysisOpen, setAnalysisOpen] = useState(true);
 
@@ -92,7 +97,23 @@ function InstructionCard({
         {/* Question label */}
         <div className="flex items-start gap-2 mb-3">
           <span className="text-xs font-bold text-slate-400 mt-0.5 shrink-0">Q{index}</span>
-          <p className="text-sm font-semibold text-slate-800">{label}</p>
+          <p className="text-sm font-semibold text-slate-800 flex-1">{label}</p>
+          {onRun && (
+            <button
+              onClick={onRun}
+              disabled={isRunning}
+              title="Relancer ce nœud"
+              className={`shrink-0 w-6 h-6 rounded-full flex items-center justify-center transition-all ${
+                isRunning
+                  ? 'bg-blue-100 text-blue-400 cursor-not-allowed'
+                  : 'bg-slate-100 text-slate-400 hover:bg-blue-100 hover:text-blue-600 hover:scale-110'
+              }`}
+            >
+              {isRunning
+                ? <Bot size={11} className="animate-pulse" />
+                : <Play size={11} className="ml-px" />}
+            </button>
+          )}
         </div>
 
         {/* Result */}
@@ -164,6 +185,15 @@ export function DossierDetail() {
   const [execStatus, setExecStatus] = useState<'idle' | 'running' | 'done' | 'error'>('idle');
   const [execResult, setExecResult] = useState<WorkflowExecutionResult | null>(null);
   const [showExecPanel, setShowExecPanel] = useState(false);
+  const [runningNodeIds, setRunningNodeIds] = useState<Set<string>>(new Set());
+  const [editingReponses, setEditingReponses] = useState(false);
+  const [editedReponses, setEditedReponses] = useState<Record<string, unknown>>({});
+  const [savingReponses, setSavingReponses] = useState(false);
+  const [replacingDocId, setReplacingDocId] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const pendingDocIdRef = useRef<string | null>(null);
 
   const { data: dossier, loading, error, refetch } = useApi(
     () => api.getDossier(reference!),
@@ -179,12 +209,16 @@ export function DossierDetail() {
   if (error) return <div className="p-6"><ErrorMessage message={error} /></div>;
   if (!dossier) return null;
 
-  // Build field label map from workflow formulaire_demande
+  // Build field label + def maps from workflow formulaire_demande
   const fieldLabels: Record<string, string> = {};
+  const fieldDefs: Record<string, { label: string; type: string; options?: string[] }> = {};
   if (workflow?.formulaire_demande) {
     const flattenBlocks = (blocks: FormBlock[]) => {
       for (const b of blocks) {
         fieldLabels[b.id] = b.label;
+        if (!['header', 'text', 'container'].includes(b.type)) {
+          fieldDefs[b.id] = { label: b.label, type: b.type, options: b.options };
+        }
         if (b.blocks) flattenBlocks(b.blocks);
       }
     };
@@ -201,8 +235,10 @@ export function DossierDetail() {
     const linkedDocs = docFieldIds
       .map((fieldId) => dossier.documents.find((d) => d.id === `doc_${fieldId}`))
       .filter((d): d is DocumentItem => !!d);
+    const nodeId = r.id.startsWith('auto_') ? r.id.slice(5) : null;
     return {
       id: r.id,
+      nodeId,
       index: i + 1,
       label: r.label,
       result: r.details?.[0] ?? '',
@@ -248,6 +284,59 @@ export function DossierDetail() {
     } catch (e) {
       setExecStatus('error');
       setExecResult({ success: false, error: String(e), execution_trace: [] });
+    }
+  };
+
+  const handleLaunchSingleNode = async (nodeId: string) => {
+    if (!dossier.workflow_id) return;
+    setRunningNodeIds((prev) => new Set(prev).add(nodeId));
+    try {
+      await api.executeWorkflowNode(dossier.workflow_id, dossier.reference, nodeId);
+      await refetch();
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setRunningNodeIds((prev) => { const s = new Set(prev); s.delete(nodeId); return s; });
+    }
+  };
+
+  const handleSaveReponses = async () => {
+    setSavingReponses(true);
+    try {
+      await api.updateDossierReponses(dossier.reference, editedReponses);
+      await refetch();
+      setEditingReponses(false);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setSavingReponses(false);
+    }
+  };
+
+  const handleReplaceDocument = async (file: File) => {
+    const docId = pendingDocIdRef.current;
+    if (!docId) return;
+    setReplacingDocId(docId);
+    try {
+      await api.replaceDossierDocument(dossier.reference, docId, file);
+      await refetch();
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setReplacingDocId(null);
+      pendingDocIdRef.current = null;
+    }
+  };
+
+  const doDelete = async () => {
+    setShowDeleteConfirm(false);
+    setDeleting(true);
+    try {
+      await api.deleteDossier(dossier.reference);
+      navigate('/dossiers');
+    } catch (e) {
+      console.error(e);
+      setDeleting(false);
     }
   };
 
@@ -297,7 +386,7 @@ export function DossierDetail() {
               ) : execStatus === 'done' ? (
                 <><CheckCircle size={14} />Voir les résultats</>
               ) : (
-                <><Play size={14} />Lancer l'analyse</>
+                <><Play size={14} />Lancer l'analyse complète</>
               )}
             </button>
           )}
@@ -311,6 +400,15 @@ export function DossierDetail() {
           )}
           <button className="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors text-slate-600">
             <Download size={14} />Exporter
+          </button>
+          <button
+            onClick={() => setShowDeleteConfirm(true)}
+            disabled={deleting}
+            title="Supprimer le dossier"
+            className="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-red-200 rounded-lg hover:bg-red-50 transition-colors text-red-500 disabled:opacity-50"
+          >
+            {deleting ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+            Supprimer
           </button>
         </div>
       </div>
@@ -337,33 +435,54 @@ export function DossierDetail() {
             </button>
           </div>
 
+          {/* Hidden file input for document replacement */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) handleReplaceDocument(file);
+              e.target.value = '';
+            }}
+          />
+
           {/* File tree */}
           <div className="px-4 py-2.5 border-b border-slate-100">
             <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Documents déposés</p>
           </div>
           <div className="flex-1 overflow-y-auto p-3 space-y-0.5">
             {dossier.documents.map((doc) => (
-              <button
-                key={doc.id}
-                onClick={() => doc.minio_key ? setViewerDoc(doc) : null}
-                className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-left transition-colors ${
-                  doc.minio_key
-                    ? 'hover:bg-slate-50 cursor-pointer'
-                    : 'cursor-default opacity-60'
-                }`}
-              >
-                <FileIcon contentType={doc.content_type} />
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs text-slate-700 truncate">{doc.nom}</p>
-                  {doc.file_size && (
-                    <p className="text-xs text-slate-400">{doc.file_size}</p>
-                  )}
-                </div>
-                <DocStatusDot status={doc.statut} />
-                {doc.minio_key && (
-                  <Eye size={11} className="text-slate-300 hover:text-blue-400 shrink-0" />
-                )}
-              </button>
+              <div key={doc.id} className="flex items-center gap-1 group/doc">
+                <button
+                  onClick={() => doc.minio_key ? setViewerDoc(doc) : undefined}
+                  className={`flex-1 flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-left transition-colors ${
+                    doc.minio_key ? 'hover:bg-slate-50 cursor-pointer' : 'cursor-default opacity-60'
+                  }`}
+                >
+                  <FileIcon contentType={doc.content_type} />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs text-slate-700 truncate" title={doc.nom}>{doc.nom.length > 20 ? `${doc.nom.slice(0, 20)}…` : doc.nom}</p>
+                    {doc.file_size && <p className="text-xs text-slate-400">{doc.file_size}</p>}
+                  </div>
+                  <DocStatusDot status={doc.statut} />
+                  {doc.minio_key && <Eye size={11} className="text-slate-300 hover:text-blue-400 shrink-0" />}
+                </button>
+                <button
+                  title="Remplacer le fichier"
+                  onClick={() => { pendingDocIdRef.current = doc.id; fileInputRef.current?.click(); }}
+                  disabled={replacingDocId === doc.id}
+                  className={`shrink-0 w-6 h-6 rounded-md flex items-center justify-center transition-all ${
+                    replacingDocId === doc.id
+                      ? 'text-blue-400 bg-blue-50'
+                      : 'text-slate-400 hover:text-blue-600 hover:bg-blue-50'
+                  }`}
+                >
+                  {replacingDocId === doc.id
+                    ? <Loader2 size={11} className="animate-spin" />
+                    : <ArrowLeftRight size={11} />}
+                </button>
+              </div>
             ))}
             {dossier.documents.length === 0 && (
               <p className="text-xs text-slate-400 text-center py-6 italic">Aucun document</p>
@@ -393,6 +512,8 @@ export function DossierDetail() {
                   isEligibilityKO={q.isEligibilityKO}
                   linkedDocs={q.linkedDocs}
                   onViewDoc={setViewerDoc}
+                  onRun={q.nodeId ? () => handleLaunchSingleNode(q.nodeId!) : undefined}
+                  isRunning={q.nodeId ? runningNodeIds.has(q.nodeId) : false}
                 />
               ))
             ) : (
@@ -485,35 +606,138 @@ export function DossierDetail() {
       {/* Réponses formulaire modal */}
       {showReponsesModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl flex flex-col w-full max-w-lg" style={{ maxHeight: '80vh' }}>
+          <div className="bg-white rounded-2xl shadow-2xl flex flex-col w-full max-w-lg" style={{ maxHeight: '85vh' }}>
+            {/* Header */}
             <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 shrink-0">
               <div className="flex items-center gap-2">
                 <ClipboardList size={16} className="text-blue-600" />
                 <p className="text-sm font-bold text-slate-800">Formulaire de demande</p>
               </div>
-              <button onClick={() => setShowReponsesModal(false)} className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors">
-                <X size={16} className="text-slate-500" />
-              </button>
+              <div className="flex items-center gap-1">
+                {!editingReponses ? (
+                  <button
+                    onClick={() => { setEditedReponses({ ...dossier.reponses }); setEditingReponses(true); }}
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
+                  >
+                    <Pencil size={12} />Modifier
+                  </button>
+                ) : (
+                  <>
+                    <button
+                      onClick={() => setEditingReponses(false)}
+                      className="px-2.5 py-1.5 text-xs font-medium text-slate-500 hover:bg-slate-100 rounded-lg transition-colors"
+                    >
+                      Annuler
+                    </button>
+                    <button
+                      onClick={handleSaveReponses}
+                      disabled={savingReponses}
+                      className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-60 transition-colors"
+                    >
+                      {savingReponses ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
+                      Enregistrer
+                    </button>
+                  </>
+                )}
+                <button onClick={() => { setShowReponsesModal(false); setEditingReponses(false); }} className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors ml-1">
+                  <X size={16} className="text-slate-500" />
+                </button>
+              </div>
             </div>
+
+            {/* Body */}
             <div className="flex-1 overflow-y-auto p-5">
               {Object.keys(dossier.reponses).length === 0 ? (
                 <p className="text-sm text-slate-400 italic text-center py-8">Aucune réponse enregistrée</p>
               ) : (
                 <div className="space-y-3">
-                  {Object.entries(dossier.reponses).map(([key, val]) => (
-                    <div key={key} className="bg-slate-50 rounded-lg px-4 py-3">
-                      <p className="text-xs font-semibold text-slate-500 mb-1">
-                        {fieldLabels[key] ?? key}
-                      </p>
-                      <p className="text-sm text-slate-800 wrap-break-word">
-                        {Array.isArray(val)
-                          ? val.join(', ')
-                          : val !== '' && val != null
-                          ? String(val)
-                          : <span className="text-slate-400 italic">Non renseigné</span>}
-                      </p>
-                    </div>
-                  ))}
+                  {Object.entries(editingReponses ? editedReponses : dossier.reponses).map(([key, val]) => {
+                    const def = fieldDefs[key];
+                    const isFile = def?.type === 'file_upload' || def?.type === 'multifile_upload';
+                    const label = fieldLabels[key] ?? key;
+
+                    if (!editingReponses || isFile) {
+                      // Read-only row
+                      return (
+                        <div key={key} className="bg-slate-50 rounded-lg px-4 py-3">
+                          <p className="text-xs font-semibold text-slate-500 mb-1 flex items-center gap-1.5">
+                            {label}
+                            {isFile && editingReponses && (
+                              <span className="text-[10px] text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded font-medium">Modifier via les documents ↑</span>
+                            )}
+                          </p>
+                          <p className="text-sm text-slate-800 wrap-break-word">
+                            {Array.isArray(val)
+                              ? val.join(', ')
+                              : val !== '' && val != null
+                              ? String(val)
+                              : <span className="text-slate-400 italic">Non renseigné</span>}
+                          </p>
+                        </div>
+                      );
+                    }
+
+                    // Edit row
+                    const strVal = Array.isArray(val) ? val : String(val ?? '');
+                    const type = def?.type ?? 'short_answer';
+                    const opts = def?.options ?? [];
+
+                    return (
+                      <div key={key} className="space-y-1">
+                        <label className="text-xs font-semibold text-slate-600">{label}</label>
+                        {type === 'long_answer' ? (
+                          <textarea
+                            rows={3}
+                            value={String(strVal)}
+                            onChange={(e) => setEditedReponses((p) => ({ ...p, [key]: e.target.value }))}
+                            className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                          />
+                        ) : type === 'dropdown' && opts.length > 0 ? (
+                          <select
+                            value={String(strVal)}
+                            onChange={(e) => setEditedReponses((p) => ({ ...p, [key]: e.target.value }))}
+                            className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          >
+                            <option value="">— Choisir —</option>
+                            {opts.map((o) => <option key={o} value={o}>{o}</option>)}
+                          </select>
+                        ) : (type === 'multiple_choice' || type === 'multiselect') && opts.length > 0 ? (
+                          <div className="space-y-1.5">
+                            {opts.map((o) => {
+                              const checked = Array.isArray(strVal) ? strVal.includes(o) : String(strVal) === o;
+                              return (
+                                <label key={o} className="flex items-center gap-2 cursor-pointer">
+                                  <input
+                                    type={type === 'multiselect' ? 'checkbox' : 'radio'}
+                                    name={key}
+                                    value={o}
+                                    checked={checked}
+                                    onChange={() => {
+                                      if (type === 'multiselect') {
+                                        const arr = Array.isArray(strVal) ? [...strVal] : [];
+                                        setEditedReponses((p) => ({ ...p, [key]: checked ? arr.filter((x) => x !== o) : [...arr, o] }));
+                                      } else {
+                                        setEditedReponses((p) => ({ ...p, [key]: o }));
+                                      }
+                                    }}
+                                    className="rounded border-slate-300 text-blue-600"
+                                  />
+                                  <span className="text-sm text-slate-700">{o}</span>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <input
+                            type={type === 'number' ? 'number' : type === 'date' ? 'date' : type === 'email' ? 'email' : type === 'phone' ? 'tel' : 'text'}
+                            value={String(strVal)}
+                            onChange={(e) => setEditedReponses((p) => ({ ...p, [key]: e.target.value }))}
+                            className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          />
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -720,6 +944,17 @@ export function DossierDetail() {
             </div>
           </div>
         </div>
+      )}
+
+      {showDeleteConfirm && (
+        <ConfirmModal
+          title="Supprimer le dossier"
+          message={`Le dossier ${dossier.reference} et tous ses fichiers seront définitivement supprimés. Cette action est irréversible.`}
+          confirmLabel="Supprimer définitivement"
+          loading={deleting}
+          onConfirm={doDelete}
+          onCancel={() => setShowDeleteConfirm(false)}
+        />
       )}
     </div>
   );

@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Search, Filter, ChevronRight, SortAsc } from 'lucide-react';
+import { Search, Filter, Trash2, SortAsc, Loader2 } from 'lucide-react';
 import { api } from '../lib/api';
 import { useApi } from '../lib/useApi';
 import { LoadingSpinner, ErrorMessage } from '../components/ui/LoadingSpinner';
 import { StatusBadge } from '../components/ui/Badge';
+import { ConfirmModal } from '../components/ui/ConfirmModal';
 import type { DossierStatus } from '../lib/api';
 
 const statusFilters: { value: DossierStatus | 'tous'; label: string }[] = [
@@ -30,14 +31,31 @@ export function DossiersList() {
 
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<DossierStatus | 'tous'>(defaultStatus);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [confirmRef, setConfirmRef] = useState<string | null>(null);
 
-  const { data: dossiers, loading, error } = useApi(
+  const { data: dossiers, loading, error, refetch } = useApi(
     () => api.getDossiers({
       statut: statusFilter !== 'tous' ? statusFilter : undefined,
       q: search || undefined,
     }),
     [statusFilter, search]
   );
+
+  const doDelete = async () => {
+    if (!confirmRef) return;
+    const ref = confirmRef;
+    setConfirmRef(null);
+    setDeletingId(ref);
+    try {
+      await api.deleteDossier(ref);
+      await refetch();
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setDeletingId(null);
+    }
+  };
 
   const { data: workflows } = useApi(() => api.getWorkflows(), []);
   const workflowNames: Record<string, string> = Object.fromEntries(
@@ -123,8 +141,17 @@ export function DossiersList() {
                     <td className="px-5 py-4"><StatusBadge type="dossier" status={d.statut} /></td>
                     <td className="px-5 py-4 text-slate-500 text-xs">{formatDate(d.derniere_maj)}</td>
                     <td className="px-5 py-4 text-slate-500">{d.instructeur ?? <span className="text-slate-300">—</span>}</td>
-                    <td className="px-5 py-4">
-                      <ChevronRight size={16} className="text-slate-300 group-hover:text-blue-400 transition-colors" />
+                    <td className="px-5 py-4" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setConfirmRef(d.reference); }}
+                        disabled={deletingId === d.reference}
+                        title="Supprimer le dossier"
+                        className="p-1.5 rounded-lg text-slate-300 hover:text-red-500 hover:bg-red-50 transition-colors disabled:opacity-40"
+                      >
+                        {deletingId === d.reference
+                          ? <Loader2 size={15} className="animate-spin" />
+                          : <Trash2 size={15} />}
+                      </button>
                     </td>
                   </tr>
                 ))
@@ -142,6 +169,17 @@ export function DossiersList() {
           <button className="px-3 py-1.5 border border-slate-200 rounded-lg hover:bg-slate-50 text-xs disabled:opacity-40" disabled>Suivant</button>
         </div>
       </div>
+
+      {confirmRef && (
+        <ConfirmModal
+          title="Supprimer le dossier"
+          message={`Le dossier ${confirmRef} et tous ses fichiers seront définitivement supprimés. Cette action est irréversible.`}
+          confirmLabel="Supprimer définitivement"
+          loading={deletingId === confirmRef}
+          onConfirm={doDelete}
+          onCancel={() => setConfirmRef(null)}
+        />
+      )}
     </div>
   );
 }
