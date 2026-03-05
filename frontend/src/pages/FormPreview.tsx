@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react';
 import { useParams } from 'react-router-dom';
-import { Copy, Check, Code2, Paperclip, X } from 'lucide-react';
+import { Copy, Check, Code2, Paperclip, X, ChevronLeft, ChevronRight } from 'lucide-react';
 import { api } from '../lib/api';
 import { useApi } from '../lib/useApi';
 import { LoadingSpinner } from '../components/ui/LoadingSpinner';
@@ -318,6 +318,8 @@ export function FormPreview() {
   const [submitStatus, setSubmitStatus] = useState<'idle' | 'submitting' | 'success' | 'error'>('idle');
   const [submitRef, setSubmitRef] = useState('');
   const [submitError, setSubmitError] = useState('');
+  const [currentPage, setCurrentPage] = useState(0);
+  const [slideDir, setSlideDir] = useState<'forward' | 'backward' | null>(null);
 
   const { data: workflow, loading, error } = useApi(
     () => api.getWorkflow(workflowId!),
@@ -367,9 +369,13 @@ export function FormPreview() {
     );
   }
 
-  const blocks: FormBlock[] = workflow.formulaire_demande?.[0]?.blocks ?? [];
+  const pages = workflow.formulaire_demande ?? [];
+  const totalPages = pages.length;
+  const pageBlocks: FormBlock[] = pages[currentPage]?.blocks ?? [];
+  const isLastPage = currentPage === totalPages - 1;
 
-  if (blocks.length === 0) {
+  const allEmpty = pages.every((p) => p.blocks.length === 0);
+  if (allEmpty) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center">
         <div className="text-center">
@@ -401,6 +407,13 @@ export function FormPreview() {
 
   return (
     <div className="min-h-screen bg-linear-to-br from-slate-50 to-blue-50/30 py-10 px-4">
+      <style>{`
+        @keyframes slideFromRight { from { opacity: 0; transform: translateX(40px); } to { opacity: 1; transform: translateX(0); } }
+        @keyframes slideFromLeft  { from { opacity: 0; transform: translateX(-40px); } to { opacity: 1; transform: translateX(0); } }
+        .slide-forward  { animation: slideFromRight 0.32s cubic-bezier(0.4,0,0.2,1); }
+        .slide-backward { animation: slideFromLeft  0.32s cubic-bezier(0.4,0,0.2,1); }
+      `}</style>
+
       <div className="max-w-xl mx-auto">
 
         {/* Header card */}
@@ -411,10 +424,38 @@ export function FormPreview() {
           )}
         </div>
 
+        {/* Progress dots */}
+        {totalPages > 1 && (
+          <div className="flex items-center justify-center gap-2 mb-5">
+            {pages.map((_, idx) => (
+              <div
+                key={idx}
+                className={`rounded-full transition-all duration-300 ${
+                  idx === currentPage ? 'w-6 h-2 bg-blue-500' : idx < currentPage ? 'w-2 h-2 bg-blue-300' : 'w-2 h-2 bg-slate-200'
+                }`}
+              />
+            ))}
+          </div>
+        )}
+
         {/* Form card */}
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm px-8 py-6">
-          <div className="space-y-5">
-            {blocks.map((block) => renderItem(block, values, handleChange, files, handleFileChange))}
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm px-8 py-6 overflow-hidden">
+
+          {/* Page title */}
+          {totalPages > 1 && pages[currentPage]?.title && (
+            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-5">
+              {pages[currentPage].title}
+            </p>
+          )}
+
+          {/* Animated page content */}
+          <div
+            key={currentPage}
+            className={slideDir === 'forward' ? 'slide-forward' : slideDir === 'backward' ? 'slide-backward' : ''}
+          >
+            <div className="space-y-5">
+              {pageBlocks.map((block) => renderItem(block, values, handleChange, files, handleFileChange))}
+            </div>
           </div>
 
           {submitStatus === 'error' && (
@@ -423,14 +464,35 @@ export function FormPreview() {
             </p>
           )}
 
-          <div className="mt-8 pt-5 border-t border-slate-100 flex justify-end">
-            <button
-              onClick={handleSubmit}
-              disabled={submitStatus === 'submitting'}
-              className="flex items-center gap-2 bg-blue-600 text-white px-6 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
-            >
-              {submitStatus === 'submitting' ? 'Envoi en cours…' : 'Soumettre'}
-            </button>
+          {/* Navigation */}
+          <div className="mt-8 pt-5 border-t border-slate-100 flex items-center justify-between">
+            {currentPage > 0 ? (
+              <button
+                onClick={() => { setSlideDir('backward'); setCurrentPage((p) => p - 1); }}
+                className="flex items-center gap-2 px-4 py-2 text-sm text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
+              >
+                <ChevronLeft size={15} />
+                Précédent
+              </button>
+            ) : <div />}
+
+            {!isLastPage ? (
+              <button
+                onClick={() => { setSlideDir('forward'); setCurrentPage((p) => p + 1); }}
+                className="flex items-center gap-2 bg-blue-600 text-white px-6 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
+              >
+                Suivant
+                <ChevronRight size={15} />
+              </button>
+            ) : (
+              <button
+                onClick={handleSubmit}
+                disabled={submitStatus === 'submitting'}
+                className="flex items-center gap-2 bg-blue-600 text-white px-6 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                {submitStatus === 'submitting' ? 'Envoi en cours…' : 'Soumettre'}
+              </button>
+            )}
           </div>
         </div>
 
