@@ -1,11 +1,10 @@
-import { useState, useRef } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   Zap, Paperclip, Bot, GitBranch, CheckCircle,
-  Plus, Trash2, Settings2, X, Upload, Files,
-  AlignLeft, AlignJustify, Hash, Mail, Phone, Calendar, List,
-  ChevronDownSquare, CheckSquare, ShieldAlert,
+  Plus, Trash2, Settings2, X,
 } from 'lucide-react';
 import type { WorkflowNode, FormBlock } from '../lib/api';
+import type { LucideIcon } from 'lucide-react';
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -35,13 +34,6 @@ const OPERATORS = [
   { value: 'less_or_equal', label: '≤ inférieur ou égal à' },
   { value: 'contains', label: 'contient' },
 ];
-
-const FIELD_TYPE_ICONS: Record<string, React.ElementType> = {
-  short_answer: AlignLeft, long_answer: AlignJustify, number: Hash, email: Mail,
-  phone: Phone, date: Calendar, multiple_choice: List, dropdown: ChevronDownSquare,
-  multiselect: CheckSquare, file_upload: Upload, multifile_upload: Files,
-  eligibility: ShieldAlert,
-};
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -83,7 +75,7 @@ function nodeColorClasses(type: string): { bg: string; border: string; icon: str
   }
 }
 
-function nodeIcon(type: string): React.ElementType {
+function nodeIcon(type: string): LucideIcon {
   switch (type) {
     case 'trigger': return Zap;
     case 'field_extractor': return Paperclip;
@@ -188,14 +180,16 @@ function ConfigModal({
       onClick={onClose}
     >
       <div
-        className="bg-white rounded-2xl shadow-2xl w-[520px] max-h-[80vh] overflow-y-auto"
+        className="bg-white rounded-2xl shadow-2xl w-130 max-h-[80vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
         <div className="px-6 pt-6 pb-4 border-b border-slate-100 sticky top-0 bg-white z-10">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              {(() => { const Icon = nodeIcon(node.type); const colors = nodeColorClasses(node.type); return <span className={`w-8 h-8 rounded-lg flex items-center justify-center ${colors.icon}`}><Icon size={16} /></span>; })()}
+              <span className={`w-8 h-8 rounded-lg flex items-center justify-center ${nodeColorClasses(node.type).icon}`}>
+                {React.createElement(nodeIcon(node.type), { size: 16 })}
+              </span>
               <h3 className="text-base font-semibold text-slate-800">Configurer — {nodeTypeLabel(node.type)}</h3>
             </div>
             <button onClick={onClose} className="p-1 hover:bg-slate-100 rounded-lg"><X size={16} className="text-slate-400" /></button>
@@ -228,21 +222,21 @@ function ConfigModal({
                   className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                 >
                   <option value="">Sélectionner un champ…</option>
-                  {formFields.map((f) => {
-                    const FieldIcon = FIELD_TYPE_ICONS[f.type];
-                    return (
-                      <option key={f.id} value={f.id}>
-                        {f.label || `(${f.type})`} — {f.type}
-                      </option>
-                    );
-                  })}
+                  {formFields.map((f) => (
+                    <option key={f.id} value={f.id}>
+                      {f.label || `(${f.type})`} — {f.type}
+                    </option>
+                  ))}
                 </select>
-                {cfg.field_type && (
-                  <p className="mt-1 text-xs text-slate-400">
-                    Type: <span className="font-medium">{cfg.field_type as string}</span>
-                    {(cfg.field_type === 'file_upload' || cfg.field_type === 'multifile_upload') && ' (fichier — sera envoyé à Claude si utilisé dans un nœud LLM)'}
-                  </p>
-                )}
+                {!!(cfg.field_type as string) && (() => {
+                  const ft = cfg.field_type as string;
+                  return (
+                    <p className="mt-1 text-xs text-slate-400">
+                      Type: <span className="font-medium">{ft}</span>
+                      {(ft === 'file_upload' || ft === 'multifile_upload') && ' (fichier — sera envoyé à Claude si utilisé dans un nœud LLM)'}
+                    </p>
+                  );
+                })()}
               </div>
               <div>
                 <label className="block text-xs font-semibold text-slate-600 mb-1.5">Nom de la variable</label>
@@ -531,13 +525,12 @@ function NodeCard({
   onLabelChange: (v: string) => void;
 }) {
   const colors = nodeColorClasses(node.type);
-  const Icon = nodeIcon(node.type);
 
   return (
     <div className={`border rounded-xl p-4 ${colors.bg} ${colors.border}`}>
       <div className="flex items-start gap-3">
         <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${colors.icon}`}>
-          <Icon size={18} />
+          {React.createElement(nodeIcon(node.type), { size: 18 })}
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-0.5">
@@ -868,13 +861,12 @@ export function InstructionWorkflowBuilder({
         )}
         <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mt-5 mb-3">Nœuds ({displayNodes.length})</p>
         <div className="space-y-1">
-          {displayNodes.map((n, i) => {
-            const Icon = nodeIcon(n.type);
+          {displayNodes.map((n) => {
             const colors = nodeColorClasses(n.type);
             return (
               <div key={n.id} className="flex items-center gap-2 text-xs text-slate-600 py-1">
                 <span className={`w-5 h-5 rounded-md flex items-center justify-center shrink-0 ${colors.icon}`}>
-                  <Icon size={11} />
+                  {React.createElement(nodeIcon(n.type), { size: 11 })}
                 </span>
                 <span className="truncate">{n.label || nodeTypeLabel(n.type)}</span>
               </div>
