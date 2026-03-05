@@ -74,9 +74,53 @@ export interface WorkflowDocument {
   validations: WorkflowValidation[];
 }
 
+export interface FieldExtractorConfig {
+  field_id: string;
+  field_label: string;
+  variable_name: string;
+  field_type: string;
+}
+
+export interface LLMCheckConfig {
+  model: string;
+  prompt: string;
+  variables: string[];
+  output_variable: string;
+}
+
+export interface ConditionConfig {
+  variable: string;
+  operator: string;
+  value: string;
+  true_next: string | null;
+  false_next: string | null;
+}
+
+export interface SetStatusConfig {
+  status: DossierStatus;
+  comment: string;
+}
+
 export interface WorkflowNode {
-  id: string; type: string; label: string; config?: Record<string, unknown>;
-  next?: string | { condition: string; node: string }[];
+  id: string;
+  type: string;
+  label: string;
+  config?: FieldExtractorConfig | LLMCheckConfig | ConditionConfig | SetStatusConfig | Record<string, unknown>;
+  next?: string | { true: string; false: string } | null;
+}
+
+export interface NodeExecutionEntry {
+  node_id: string;
+  type: string;
+  label: string;
+  status: 'ok' | 'error' | 'skipped';
+  output: Record<string, unknown>;
+}
+
+export interface WorkflowExecutionResult {
+  success: boolean;
+  error?: string;
+  execution_trace: NodeExecutionEntry[];
 }
 
 export interface AIConfig {
@@ -90,7 +134,6 @@ export interface Workflow {
   ai_config: AIConfig; created_at: string; updated_at: string;
   dossiers_count: number;
   formulaire_demande: FormPage[];
-  formulaire_instruction: FormPage[];
 }
 
 export interface User {
@@ -150,6 +193,8 @@ export const api = {
   updateWorkflow: (id: string, payload: Partial<Workflow>) =>
     request<Workflow>(`/workflows/${id}`, { method: 'PUT', body: JSON.stringify(payload) }),
   deleteWorkflow: (id: string) => request<void>(`/workflows/${id}`, { method: 'DELETE' }),
+  executeWorkflow: (workflowId: string, dossierReference: string) =>
+    request<WorkflowExecutionResult>(`/workflows/${workflowId}/execute/${dossierReference}`, { method: 'POST' }),
 
   // Dossier submit (multipart)
   submitDossier: (formData: FormData) =>
