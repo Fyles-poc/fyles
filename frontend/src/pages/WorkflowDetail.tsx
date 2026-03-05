@@ -5,7 +5,7 @@ import {
   FileText, GitBranch, Save, GripVertical, ExternalLink,
   Type, AlignLeft, AlignJustify, List, ChevronDownSquare,
   CheckSquare, Hash, Mail, Phone, Calendar,
-  Upload, Files, Heading1, X, ShieldAlert, Search, Layers,
+  Upload, Files, Heading1, X, ShieldAlert, Search, Layers, MoreHorizontal, Pencil,
 } from 'lucide-react';
 import { api } from '../lib/api';
 import type { WorkflowNode } from '../lib/api';
@@ -41,6 +41,12 @@ interface FormBlock {
   conditions?: FormCondition[];
   conditionLogic?: 'AND' | 'OR';
   blocks?: FormBlock[];
+}
+
+interface FormPage {
+  id: string;
+  title: string;
+  blocks: FormBlock[];
 }
 
 // ── Field meta ─────────────────────────────────────────────────────────────
@@ -1114,8 +1120,43 @@ export function WorkflowDetail() {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<TabId>('formulaire_demande');
 
-  const [demandeBlocks, setDemandeBlocks] = useState<FormBlock[]>([]);
+  const [demandePages, setDemandePages] = useState<FormPage[]>([{ id: 'page_1', title: 'Page 1', blocks: [] }]);
+  const [activePageIdx, setActivePageIdx] = useState(0);
   const [instructionNodes, setInstructionNodes] = useState<WorkflowNode[]>([]);
+
+  const [renamingPageIdx, setRenamingPageIdx] = useState<number | null>(null);
+  const [renameValue, setRenameValue] = useState('');
+  const [pageMenuIdx, setPageMenuIdx] = useState<number | null>(null);
+  const [menuAnchor, setMenuAnchor] = useState<{ top: number; left: number } | null>(null);
+
+  const addPage = () => {
+    const newPage: FormPage = { id: `page_${crypto.randomUUID()}`, title: `Page ${demandePages.length + 1}`, blocks: [] };
+    setDemandePages((prev) => [...prev, newPage]);
+    setActivePageIdx(demandePages.length);
+  };
+
+  const deletePage = (idx: number) => {
+    setDemandePages((prev) => prev.filter((_, i) => i !== idx));
+    setActivePageIdx((prev) => Math.min(prev, demandePages.length - 2));
+  };
+
+  const confirmRename = () => {
+    if (renamingPageIdx === null) return;
+    const trimmed = renameValue.trim() || `Page ${renamingPageIdx + 1}`;
+    setDemandePages((prev) => {
+      const pages = [...prev];
+      pages[renamingPageIdx] = { ...pages[renamingPageIdx], title: trimmed };
+      return pages;
+    });
+    setRenamingPageIdx(null);
+  };
+
+  useEffect(() => {
+    if (pageMenuIdx === null) return;
+    const close = () => setPageMenuIdx(null);
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, [pageMenuIdx]);
 
   const [isSaving, setIsSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saved' | 'error'>('idle');
@@ -1127,9 +1168,8 @@ export function WorkflowDetail() {
 
   useEffect(() => {
     if (!workflow) return;
-    const demBlocks = workflow.formulaire_demande?.[0]?.blocks;
-    if (demBlocks && demBlocks.length > 0) {
-      setDemandeBlocks(demBlocks as unknown as FormBlock[]);
+    if (workflow.formulaire_demande && workflow.formulaire_demande.length > 0) {
+      setDemandePages(workflow.formulaire_demande as unknown as FormPage[]);
     }
     if (workflow.nodes && workflow.nodes.length > 0) {
       setInstructionNodes(workflow.nodes as unknown as WorkflowNode[]);
@@ -1142,7 +1182,7 @@ export function WorkflowDetail() {
     setSaveStatus('idle');
     try {
       await api.updateWorkflow(id!, {
-        formulaire_demande: [{ id: 'main', title: 'Formulaire de demande', blocks: demandeBlocks }],
+        formulaire_demande: demandePages,
         nodes: instructionNodes,
       });
       setSaveStatus('saved');
@@ -1233,17 +1273,108 @@ export function WorkflowDetail() {
       {/* Tab content */}
       <div className="flex-1 overflow-hidden">
         {activeTab === 'formulaire_demande' && (
-          <FormBuilder
-            blocks={demandeBlocks}
-            isInstruction={false}
-            setBlocks={setDemandeBlocks}
-          />
+          <div className="flex flex-col h-full overflow-hidden">
+            {/* Page tabs strip */}
+            <div className="flex items-center gap-1 px-4 py-2 border-b border-slate-200 bg-white shrink-0 overflow-x-auto">
+              {demandePages.map((page, idx) => (
+                <div
+                  key={page.id}
+                  className={`group flex items-center gap-1 pl-3 pr-1 py-1.5 rounded-lg text-sm cursor-pointer shrink-0 transition-colors ${idx === activePageIdx ? 'bg-blue-50 text-blue-600 font-medium' : 'text-slate-500 hover:bg-slate-50'}`}
+                  onClick={() => { setActivePageIdx(idx); setPageMenuIdx(null); setMenuAnchor(null); }}
+                >
+                  {renamingPageIdx === idx ? (
+                    <input
+                      autoFocus
+                      value={renameValue}
+                      onChange={(e) => setRenameValue(e.target.value)}
+                      onBlur={confirmRename}
+                      onKeyDown={(e) => { if (e.key === 'Enter') confirmRename(); if (e.key === 'Escape') setRenamingPageIdx(null); }}
+                      onClick={(e) => e.stopPropagation()}
+                      className="w-24 text-sm font-medium bg-white border border-blue-400 rounded px-1.5 py-0.5 outline-none ring-1 ring-blue-400 text-blue-700"
+                    />
+                  ) : (
+                    <span>{page.title || `Page ${idx + 1}`}</span>
+                  )}
+
+                  {/* Three dots button */}
+                  <button
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (pageMenuIdx === idx) {
+                        setPageMenuIdx(null);
+                        setMenuAnchor(null);
+                      } else {
+                        const rect = e.currentTarget.getBoundingClientRect();
+                        setMenuAnchor({ top: rect.bottom + 4, left: rect.left });
+                        setPageMenuIdx(idx);
+                      }
+                    }}
+                    className={`p-0.5 rounded transition-all ${idx === activePageIdx ? 'opacity-50 hover:opacity-100 hover:bg-blue-100' : 'opacity-0 group-hover:opacity-60 hover:opacity-100! hover:bg-slate-200'}`}
+                  >
+                    <MoreHorizontal size={13} />
+                  </button>
+                </div>
+              ))}
+              <button
+                onClick={addPage}
+                className="flex items-center gap-1 px-2 py-1.5 text-xs text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors shrink-0 ml-1"
+              >
+                <Plus size={13} />
+                Page
+              </button>
+            </div>
+
+            {/* Page dropdown menu — fixed to avoid overflow clipping */}
+            {pageMenuIdx !== null && menuAnchor && (
+              <div
+                style={{ position: 'fixed', top: menuAnchor.top, left: menuAnchor.left }}
+                className="bg-white border border-slate-200 rounded-xl shadow-xl py-1.5 z-50 w-40"
+                onMouseDown={(e) => e.stopPropagation()}
+              >
+                <button
+                  onClick={() => {
+                    setRenameValue(demandePages[pageMenuIdx]?.title || `Page ${pageMenuIdx + 1}`);
+                    setRenamingPageIdx(pageMenuIdx);
+                    setActivePageIdx(pageMenuIdx);
+                    setPageMenuIdx(null);
+                    setMenuAnchor(null);
+                  }}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
+                >
+                  <Pencil size={13} className="text-slate-400" />
+                  Renommer
+                </button>
+                {demandePages.length > 1 && (
+                  <button
+                    onClick={() => { deletePage(pageMenuIdx); setPageMenuIdx(null); setMenuAnchor(null); }}
+                    className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-red-500 hover:bg-red-50 transition-colors"
+                  >
+                    <Trash2 size={13} />
+                    Supprimer la page
+                  </button>
+                )}
+              </div>
+            )}
+            <FormBuilder
+              blocks={demandePages[activePageIdx]?.blocks ?? []}
+              isInstruction={false}
+              setBlocks={(action) => {
+                setDemandePages((prev) => {
+                  const pages = [...prev];
+                  const cur = pages[activePageIdx].blocks;
+                  pages[activePageIdx] = { ...pages[activePageIdx], blocks: typeof action === 'function' ? (action as (p: FormBlock[]) => FormBlock[])(cur) : action };
+                  return pages;
+                });
+              }}
+            />
+          </div>
         )}
         {activeTab === 'workflow' && (
           <InstructionWorkflowBuilder
             nodes={instructionNodes}
             setNodes={setInstructionNodes}
-            demandeBlocks={demandeBlocks}
+            demandeBlocks={demandePages.flatMap((p) => p.blocks)}
           />
         )}
       </div>
