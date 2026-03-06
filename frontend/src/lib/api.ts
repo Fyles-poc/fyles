@@ -30,9 +30,19 @@ export interface DocumentItem {
   content_type?: string;
 }
 
+export interface AIAnalysisResultOverrides {
+  statut?: 'ok' | 'warning' | 'error';
+  details?: string[];
+  message?: string;
+}
+
 export interface AIAnalysisResult {
   id: string; label: string; statut: 'ok' | 'warning' | 'error';
   message: string; details: string[];
+  manual_overrides?: AIAnalysisResultOverrides;
+  override_reason?: string;
+  is_overridden?: boolean;
+  overridden_at?: string;
 }
 
 export interface AIRecommendation {
@@ -213,6 +223,15 @@ export const api = {
       `/workflows/${workflowId}/execute/${dossierReference}/node/${nodeId}`,
       { method: 'POST' }
     ),
+
+  updateAnalysisResult: (
+    reference: string,
+    resultId: string,
+    payload: { overrides: AIAnalysisResultOverrides; override_reason?: string }
+  ) => request<Dossier>(`/dossiers/${reference}/results/${resultId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  }),
 
   // Dossier submit (multipart)
   submitDossier: (formData: FormData) =>

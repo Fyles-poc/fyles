@@ -4,10 +4,11 @@ import random
 import string
 from datetime import datetime
 from typing import Optional
+from pydantic import BaseModel
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 
-from api.models.dossier import Dossier, DossierStatus, DecisionPayload, Demandeur, DocumentItem, DocumentStatus
+from api.models.dossier import Dossier, DossierStatus, DecisionPayload, Demandeur, DocumentItem, DocumentStatus, AIAnalysisResult
 from api.models.workflow import Workflow
 from api.config import get_settings
 from api.storage import get_minio_client, ensure_bucket
@@ -157,6 +158,37 @@ async def submit_dossier(request: Request):
     )
     await dossier.insert()
     return {"reference": reference, "id": str(dossier.id)}
+
+
+class AnalysisResultOverridePayload(BaseModel):
+    overrides: dict  # keys: statut, details, message — only provided keys are overridden
+    override_reason: Optional[str] = None
+
+
+@router.patch("/{reference}/results/{result_id}", response_model=Dossier)
+async def patch_analysis_result(reference: str, result_id: str, payload: AnalysisResultOverridePayload):
+    dossier = await Dossier.find_one(Dossier.reference == reference)
+    if not dossier:
+        raise HTTPException(status_code=404, detail=f"Dossier {reference} introuvable")
+    result = next((r for r in dossier.analysis_results if r.id == result_id), None)
+    if not result:
+        raise HTTPException(status_code=404, detail=f"Résultat {result_id} introuvable")
+
+    if payload.overrides:
+        result.manual_overrides = payload.overrides
+        result.override_reason = payload.override_reason
+        result.is_overridden = True
+        result.overridden_at = datetime.utcnow().isoformat()
+    else:
+        # Empty overrides = reset to AI values
+        result.manual_overrides = {}
+        result.override_reason = None
+        result.is_overridden = False
+        result.overridden_at = None
+
+    dossier.derniere_maj = datetime.utcnow()
+    await dossier.save()
+    return dossier
 
 
 @router.patch("/{reference}/reponses", response_model=Dossier)
