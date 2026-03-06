@@ -85,7 +85,7 @@ function buildOrderedPipeline(nodes: WorkflowNode[]): WorkflowNode[] {
   while (cur && !visited.has(cur.id)) {
     visited.add(cur.id);
     ordered.push(cur);
-    const nextId = typeof cur.next === 'string' ? cur.next : null;
+    const nextId: string | null = typeof cur.next === 'string' ? cur.next : null;
     cur = nextId ? map.get(nextId) : undefined;
   }
   return ordered;
@@ -332,7 +332,7 @@ function AnalysisPipelineCard({
                         <span className="text-xs text-slate-400 italic">Aucun fichier</span>
                       )
                     ) : (
-                      <span className="text-xs text-slate-700 flex-1 break-words">
+                      <span className="text-xs text-slate-700 flex-1 wrap-break-word">
                         {value !== undefined && value !== '' && value !== null
                           ? (Array.isArray(value) ? value.join(', ') : String(value))
                           : <span className="italic text-slate-400">Non renseigné</span>}
