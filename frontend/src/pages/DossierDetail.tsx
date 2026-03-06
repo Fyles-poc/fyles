@@ -6,14 +6,14 @@ import {
   MessageSquare, Download, Eye, X,
   ClipboardList, ExternalLink, FileText, Image, File,
   Sparkles, ShieldAlert, ChevronDown, ChevronUp,
-  CheckSquare, Bot, Play, Pencil, Save, ArrowLeftRight, Loader2, Trash2,
+  CheckSquare, Bot, Play, Pencil, Save, ArrowLeftRight, Loader2, Trash2, Ban,
 } from 'lucide-react';
 import { api } from '../lib/api';
 import { useApi } from '../lib/useApi';
 import { LoadingSpinner, ErrorMessage } from '../components/ui/LoadingSpinner';
 import { StatusBadge } from '../components/ui/Badge';
 import { ConfirmModal } from '../components/ui/ConfirmModal';
-import type { DocumentItem, RecommendationDecision, FormBlock, WorkflowExecutionResult } from '../lib/api';
+import type { DocumentItem, RecommendationDecision, FormBlock, WorkflowExecutionResult, AIAnalysisResult, NodeExecutionEntry, WorkflowNode } from '../lib/api';
 
 // ── File tree icon ─────────────────────────────────────────────────────────
 
@@ -58,114 +58,262 @@ function FormatResult({ raw, status }: { raw: string; status: 'ok' | 'warning' |
   );
 }
 
-function InstructionCard({
-  index,
-  label,
+// ── Pipeline helpers ───────────────────────────────────────────────────────
+
+interface BreakCondition {
+  source_node_id: string;
+  operator: string;
+  value?: string | number;
+}
+
+const OP_LABELS: Record<string, string> = {
+  is_false: 'est Non',
+  is_true: 'est Oui',
+  less_than: 'inférieur à',
+  greater_than: 'supérieur à',
+  equals: 'égal à',
+  not_equals: 'différent de',
+};
+
+function buildOrderedPipeline(nodes: WorkflowNode[]): WorkflowNode[] {
+  if (!nodes.length) return [];
+  const map = new Map(nodes.map((n) => [n.id, n]));
+  const start = nodes.find((n) => n.type === 'trigger') ?? nodes[0];
+  const ordered: WorkflowNode[] = [];
+  const visited = new Set<string>();
+  let cur: WorkflowNode | undefined = start;
+  while (cur && !visited.has(cur.id)) {
+    visited.add(cur.id);
+    ordered.push(cur);
+    const nextId = typeof cur.next === 'string' ? cur.next : null;
+    cur = nextId ? map.get(nextId) : undefined;
+  }
+  return ordered;
+}
+
+// ── AnalysisPipelineCard ───────────────────────────────────────────────────
+
+function AnalysisPipelineCard({
+  displayLabel,
+  nodeLabel,
+  sources,
+  fieldDefs,
+  reponses,
+  documents,
   result,
-  message,
-  status,
-  isEligibilityKO,
-  linkedDocs,
+  isRunning,
   onViewDoc,
   onRun,
-  isRunning,
 }: {
-  index: number;
-  label: string;
-  result: string;
-  message: string;
-  status: 'ok' | 'warning' | 'error';
-  isEligibilityKO: boolean;
-  linkedDocs: DocumentItem[];
+  displayLabel: string;
+  nodeLabel: string;
+  sources: string[];
+  fieldDefs: Record<string, { label: string; type: string }>;
+  reponses: Record<string, unknown>;
+  documents: DocumentItem[];
+  result?: AIAnalysisResult;
+  isRunning: boolean;
   onViewDoc: (doc: DocumentItem) => void;
-  onRun?: () => void;
-  isRunning?: boolean;
+  onRun: () => void;
 }) {
+  const [sourcesOpen, setSourcesOpen] = useState(true);
   const [analysisOpen, setAnalysisOpen] = useState(true);
+  const hasResult = !!result;
+
+  const sourceEntries = sources.map((id) => {
+    const def = fieldDefs[id] ?? { label: id, type: 'short_answer' };
+    const isFile = def.type === 'file_upload' || def.type === 'multifile_upload';
+    const doc = isFile ? documents.find((d) => d.id === `doc_${id}`) : undefined;
+    const value = !isFile ? reponses[id] : undefined;
+    return { id, label: def.label || id, isFile, doc, value };
+  });
 
   return (
     <div className={`bg-white border rounded-xl overflow-hidden mb-4 ${
-      isEligibilityKO ? 'border-red-200' : 'border-slate-200'
+      hasResult && result.statut === 'error' ? 'border-red-200' : 'border-slate-200'
     }`}>
-      {isEligibilityKO && (
+      {hasResult && result.statut === 'error' && (
         <div className="bg-red-50 border-b border-red-100 px-4 py-2 flex items-center gap-2">
           <ShieldAlert size={13} className="text-red-500" />
           <span className="text-xs text-red-600 font-semibold">Point bloquant — dossier KO</span>
         </div>
       )}
       <div className="p-4">
-        {/* Question label */}
+        {/* Header */}
         <div className="flex items-start gap-2 mb-3">
-          <span className="text-xs font-bold text-slate-400 mt-0.5 shrink-0">Q{index}</span>
-          <p className="text-sm font-semibold text-slate-800 flex-1">{label}</p>
-          {onRun && (
-            <button
-              onClick={onRun}
-              disabled={isRunning}
-              title="Relancer ce nœud"
-              className={`shrink-0 w-6 h-6 rounded-full flex items-center justify-center transition-all ${
-                isRunning
-                  ? 'bg-blue-100 text-blue-400 cursor-not-allowed'
-                  : 'bg-slate-100 text-slate-400 hover:bg-blue-100 hover:text-blue-600 hover:scale-110'
-              }`}
-            >
-              {isRunning
-                ? <Bot size={11} className="animate-pulse" />
-                : <Play size={11} className="ml-px" />}
-            </button>
-          )}
-        </div>
-
-        {/* Result */}
-        <div className={`border rounded-lg px-4 py-3 flex items-center justify-center min-h-14 ${
-          status === 'ok'
-            ? 'border-emerald-200 bg-emerald-50/50'
-            : status === 'error'
-            ? 'border-red-200 bg-red-50/50'
-            : 'border-amber-200 bg-amber-50/50'
-        }`}>
-          {result
-            ? <FormatResult raw={result} status={status} />
-            : <span className="text-slate-400 italic text-sm">Aucun résultat</span>}
-        </div>
-
-        {/* Analyse IA */}
-        <div className="mt-3 bg-blue-50 border border-blue-100 rounded-lg overflow-hidden">
+          <span className="text-xs font-bold text-blue-400 mt-0.5 shrink-0">{displayLabel}</span>
+          <p className="text-sm font-semibold text-slate-800 flex-1">{nodeLabel || <span className="italic text-slate-400">Nœud sans nom</span>}</p>
           <button
-            className="w-full flex items-center justify-between px-3 py-2 text-left"
-            onClick={() => setAnalysisOpen(!analysisOpen)}
+            onClick={onRun}
+            disabled={isRunning}
+            title={hasResult ? 'Relancer ce nœud' : 'Exécuter ce nœud'}
+            className="shrink-0 w-6 h-6 rounded-full flex items-center justify-center transition-all bg-slate-100 text-slate-400 hover:bg-blue-100 hover:text-blue-600 hover:scale-110 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <div className="flex items-center gap-2">
-              <Sparkles size={13} className="text-blue-500" />
-              <span className="text-xs font-semibold text-blue-700">Analyse IA</span>
-            </div>
-            {analysisOpen
-              ? <ChevronUp size={12} className="text-blue-400" />
-              : <ChevronDown size={12} className="text-blue-400" />}
+            {isRunning ? <Bot size={11} className="animate-pulse" /> : <Play size={11} className="ml-px" />}
           </button>
-          {analysisOpen && (
-            <div className="px-3 pb-3 pt-2 border-t border-blue-100 space-y-2">
-              {message
-                ? <p className="text-xs text-blue-700 leading-relaxed">{message}</p>
-                : <p className="text-xs text-blue-600 italic">Aucun détail disponible</p>}
-              {linkedDocs.length > 0 && (
-                <div className="flex flex-wrap gap-1.5 pt-1">
-                  {linkedDocs.map((doc) => (
-                    <button
-                      key={doc.id}
-                      onClick={() => onViewDoc(doc)}
-                      className="inline-flex items-center gap-1.5 text-xs bg-white border border-blue-200 text-blue-600 hover:bg-blue-100 px-2 py-1 rounded-lg transition-colors"
-                    >
-                      <FileIcon contentType={doc.content_type} />
-                      <span className="max-w-32 truncate">{doc.nom}</span>
-                      <Eye size={10} className="shrink-0 text-blue-400" />
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
         </div>
+
+        {/* Sources */}
+        {sourceEntries.length > 0 && (
+          <div className="mb-3 border border-slate-100 rounded-lg overflow-hidden">
+            <button
+              className="w-full flex items-center justify-between px-3 py-1.5 text-left bg-slate-50 hover:bg-slate-100 transition-colors"
+              onClick={() => setSourcesOpen((o) => !o)}
+            >
+              <span className="text-xs font-semibold text-slate-400 uppercase tracking-wide">
+                Sources ({sourceEntries.length})
+              </span>
+              {sourcesOpen ? <ChevronUp size={11} className="text-slate-400" /> : <ChevronDown size={11} className="text-slate-400" />}
+            </button>
+            {sourcesOpen && (
+              <div className="px-3 py-2 space-y-1.5 border-t border-slate-100">
+                {sourceEntries.map(({ id, label, isFile, doc, value }) => (
+                  <div key={id} className="flex items-start gap-2">
+                    <span className="text-xs text-slate-400 w-28 shrink-0 truncate pt-0.5" title={label}>{label}</span>
+                    {isFile ? (
+                      doc?.minio_key ? (
+                        <button
+                          onClick={() => doc && onViewDoc(doc)}
+                          className="inline-flex items-center gap-1.5 text-xs bg-white border border-slate-200 text-slate-600 hover:bg-blue-50 hover:border-blue-200 hover:text-blue-600 px-2 py-0.5 rounded transition-colors"
+                        >
+                          <FileIcon contentType={doc.content_type} />
+                          <span className="max-w-28 truncate">{doc.nom}</span>
+                          <Eye size={10} />
+                        </button>
+                      ) : (
+                        <span className="text-xs text-slate-400 italic">Aucun fichier</span>
+                      )
+                    ) : (
+                      <span className="text-xs text-slate-700 flex-1 break-words">
+                        {value !== undefined && value !== '' && value !== null
+                          ? (Array.isArray(value) ? value.join(', ') : String(value))
+                          : <span className="italic text-slate-400">Non renseigné</span>}
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Result — only shown after analysis has run */}
+        {hasResult ? (
+          <>
+            <div className={`border rounded-lg px-4 py-3 flex items-center justify-center min-h-12 mb-3 ${
+              result.statut === 'ok' ? 'border-emerald-200 bg-emerald-50/50'
+              : result.statut === 'error' ? 'border-red-200 bg-red-50/50'
+              : 'border-amber-200 bg-amber-50/50'
+            }`}>
+              {result.details?.[0]
+                ? <FormatResult raw={result.details[0]} status={result.statut} />
+                : <span className="text-slate-400 italic text-sm">Aucun résultat</span>}
+            </div>
+            {result.message && (
+              <div className="bg-blue-50 border border-blue-100 rounded-lg overflow-hidden">
+                <button
+                  className="w-full flex items-center justify-between px-3 py-2 text-left"
+                  onClick={() => setAnalysisOpen((o) => !o)}
+                >
+                  <div className="flex items-center gap-2">
+                    <Sparkles size={13} className="text-blue-500" />
+                    <span className="text-xs font-semibold text-blue-700">Analyse IA</span>
+                  </div>
+                  {analysisOpen ? <ChevronUp size={12} className="text-blue-400" /> : <ChevronDown size={12} className="text-blue-400" />}
+                </button>
+                {analysisOpen && (
+                  <div className="px-3 pb-3 pt-2 border-t border-blue-100">
+                    <p className="text-xs text-blue-700 leading-relaxed">{result.message}</p>
+                  </div>
+                )}
+              </div>
+            )}
+          </>
+        ) : (
+          <div className="bg-slate-50 border border-dashed border-slate-200 rounded-lg px-4 py-2.5 text-center">
+            <p className="text-xs text-slate-400 italic">Lancez l'analyse pour voir le résultat</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── BreakPipelineCard ──────────────────────────────────────────────────────
+
+function BreakPipelineCard({
+  displayLabel,
+  nodeLabel,
+  conditions,
+  conditionLogic,
+  nodeDisplayInfo,
+  traceEntry,
+}: {
+  displayLabel: string;
+  nodeLabel: string;
+  conditions: BreakCondition[];
+  conditionLogic: string;
+  nodeDisplayInfo: Map<string, { label: string }>;
+  traceEntry?: NodeExecutionEntry;
+}) {
+  const triggered = traceEntry?.status === 'break';
+  const notExecuted = !traceEntry || traceEntry.status === 'not_run';
+  const passed = traceEntry && !triggered && !notExecuted;
+
+  return (
+    <div className={`border rounded-xl overflow-hidden mb-4 ${
+      triggered ? 'border-orange-300 bg-orange-50'
+      : notExecuted ? 'border-dashed border-slate-200 bg-slate-50/50 opacity-60'
+      : 'border-orange-200 bg-orange-50/40'
+    }`}>
+      <div className="p-4">
+        {/* Header */}
+        <div className="flex items-center gap-2 mb-3">
+          <span className="text-xs font-bold text-orange-400 shrink-0">{displayLabel}</span>
+          <Ban size={13} className="text-orange-500 shrink-0" />
+          <p className="text-sm font-semibold text-slate-700 flex-1">{nodeLabel || 'Rupture conditionnelle'}</p>
+        </div>
+
+        {/* Conditions */}
+        {conditions.length > 0 ? (
+          <div className="space-y-1.5 mb-3">
+            {conditions.map((cond, i) => {
+              const sourceInfo = nodeDisplayInfo.get(cond.source_node_id);
+              const opLabel = OP_LABELS[cond.operator] ?? cond.operator;
+              return (
+                <div key={i} className="flex items-center gap-1.5 flex-wrap text-xs">
+                  {i > 0 && <span className="font-bold text-orange-500 text-[10px]">{conditionLogic}</span>}
+                  <span className="text-slate-500">Si</span>
+                  <span className="font-semibold text-slate-700 bg-blue-50 border border-blue-100 px-1.5 py-0.5 rounded">
+                    {sourceInfo?.label ?? cond.source_node_id}
+                  </span>
+                  <span className="bg-orange-100 text-orange-700 border border-orange-200 px-1.5 py-0.5 rounded font-medium">
+                    {opLabel}{cond.value !== undefined ? ` ${cond.value}` : ''}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <p className="text-xs text-slate-400 italic mb-3">Aucune condition configurée</p>
+        )}
+
+        {/* Status */}
+        {triggered ? (
+          <div className="flex items-center gap-2 bg-orange-100 border border-orange-200 rounded-lg px-3 py-2">
+            <Ban size={13} className="text-orange-600 shrink-0" />
+            <span className="text-xs font-semibold text-orange-700">Pipeline interrompu ici</span>
+          </div>
+        ) : passed ? (
+          <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
+            <CheckCircle size={13} className="text-emerald-500 shrink-0" />
+            <span className="text-xs font-semibold text-emerald-700">Conditions non remplies — pipeline continue</span>
+          </div>
+        ) : (
+          <div className="bg-white/60 border border-dashed border-slate-200 rounded-lg px-3 py-2 text-center">
+            <p className="text-xs text-slate-400 italic">Non exécuté</p>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -227,27 +375,31 @@ export function DossierDetail() {
     }
   }
 
-  // Map analysis_results → instruction questions
+  // Map analysis_results → instruction questions (for right panel)
   const instructionQuestions = dossier.analysis_results.map((r, i) => {
-    const docFieldIds = (r.details ?? [])
-      .filter((d) => d.startsWith('doc:'))
-      .map((d) => d.slice(4));
-    const linkedDocs = docFieldIds
-      .map((fieldId) => dossier.documents.find((d) => d.id === `doc_${fieldId}`))
-      .filter((d): d is DocumentItem => !!d);
     const nodeId = r.id.startsWith('auto_') ? r.id.slice(5) : null;
     return {
       id: r.id,
       nodeId,
       index: i + 1,
       label: r.label,
-      result: r.details?.[0] ?? '',
-      message: r.message,
       status: r.statut as 'ok' | 'warning' | 'error',
       isEligibilityKO: r.statut === 'error',
-      linkedDocs,
     };
   });
+
+  // Build ordered pipeline from workflow nodes
+  const orderedNodes = workflow?.nodes ? buildOrderedPipeline(workflow.nodes) : [];
+  const nonTriggerNodes = orderedNodes.filter((n) => n.type !== 'trigger');
+  let qCount = 0, breakCount = 0;
+  const nodeDisplayInfo = new Map<string, { label: string }>();
+  for (const n of nonTriggerNodes) {
+    if (n.type === 'analysis') { qCount++; nodeDisplayInfo.set(n.id, { label: `Q${qCount}` }); }
+    else if (n.type === 'break') { breakCount++; nodeDisplayInfo.set(n.id, { label: `Break ${breakCount}` }); }
+  }
+  const analysisResultMap = new Map(
+    (dossier.analysis_results ?? []).map((r) => [r.id, r])
+  );
 
   const handleConfirmDecision = async () => {
     if (!decision) return;
@@ -495,34 +647,61 @@ export function DossierDetail() {
           <div className="bg-white border-b border-slate-200 px-5 py-3 shrink-0 flex items-center justify-between">
             <div>
               <p className="text-sm font-semibold text-slate-800">Formulaire d'instruction</p>
-              <p className="text-xs text-slate-500">{instructionQuestions.length} question(s) à instruire</p>
+              <p className="text-xs text-slate-500">
+                {nonTriggerNodes.length > 0
+                  ? `${qCount} analyse${qCount !== 1 ? 's' : ''}${breakCount > 0 ? ` · ${breakCount} rupture${breakCount !== 1 ? 's' : ''}` : ''}`
+                  : 'Aucune étape configurée'}
+              </p>
             </div>
           </div>
 
           <div className="flex-1 overflow-y-auto p-5">
-            {instructionQuestions.length > 0 ? (
-              instructionQuestions.map((q) => (
-                <InstructionCard
-                  key={q.id}
-                  index={q.index}
-                  label={q.label}
-                  result={q.result}
-                  message={q.message}
-                  status={q.status}
-                  isEligibilityKO={q.isEligibilityKO}
-                  linkedDocs={q.linkedDocs}
-                  onViewDoc={setViewerDoc}
-                  onRun={q.nodeId ? () => handleLaunchSingleNode(q.nodeId!) : undefined}
-                  isRunning={q.nodeId ? runningNodeIds.has(q.nodeId) : false}
-                />
-              ))
+            {nonTriggerNodes.length > 0 ? (
+              nonTriggerNodes.map((node) => {
+                const cfg = (node.config as Record<string, unknown>) ?? {};
+                const displayInfo = nodeDisplayInfo.get(node.id);
+                if (node.type === 'analysis') {
+                  const sources = (cfg.sources as string[]) ?? [];
+                  return (
+                    <AnalysisPipelineCard
+                      key={node.id}
+                      displayLabel={displayInfo?.label ?? '?'}
+                      nodeLabel={node.label}
+                      sources={sources}
+                      fieldDefs={fieldDefs}
+                      reponses={dossier.reponses}
+                      documents={dossier.documents}
+                      result={analysisResultMap.get(`auto_${node.id}`)}
+                      isRunning={runningNodeIds.has(node.id)}
+                      onViewDoc={setViewerDoc}
+                      onRun={() => handleLaunchSingleNode(node.id)}
+                    />
+                  );
+                }
+                if (node.type === 'break') {
+                  const conditions = (cfg.conditions as BreakCondition[]) ?? [];
+                  const conditionLogic = (cfg.condition_logic as string) ?? 'AND';
+                  return (
+                    <BreakPipelineCard
+                      key={node.id}
+                      displayLabel={displayInfo?.label ?? 'Break'}
+                      nodeLabel={node.label}
+                      conditions={conditions}
+                      conditionLogic={conditionLogic}
+                      nodeDisplayInfo={nodeDisplayInfo}
+                      traceEntry={execResult?.execution_trace.find((e) => e.node_id === node.id)}
+                    />
+                  );
+                }
+                return null;
+              })
             ) : (
               <div className="text-center py-16">
                 <div className="w-12 h-12 bg-slate-100 rounded-xl flex items-center justify-center mx-auto mb-3">
                   <CheckSquare size={20} className="text-slate-300" />
                 </div>
-                <p className="text-sm text-slate-400 font-medium">Aucune question d'instruction</p>
-                <p className="text-xs text-slate-400 mt-1">Configurez le formulaire d'instruction dans le workflow</p>
+                <p className="text-sm text-slate-400 font-medium">Aucune étape d'analyse</p>
+                <p className="text-xs text-slate-400 mt-1">Configurez le workflow d'instruction pour automatiser l'analyse</p>
               </div>
             )}
           </div>
@@ -903,26 +1082,38 @@ export function DossierDetail() {
             {/* Trace */}
             <div className="flex-1 overflow-y-auto p-5 space-y-3">
               {execResult.execution_trace.map((entry, i) => {
-                const isOk = entry.status === 'ok';
+                const isOk = entry.status === 'ok' || entry.status === 'skipped';
                 const isError = entry.status === 'error';
+                const isBreak = entry.status === 'break';
+                const isNotRun = entry.status === 'not_run';
+                const isWarning = entry.status === 'warning';
+
+                const borderColor = isError ? 'border-red-200' : isBreak ? 'border-orange-300' : isNotRun ? 'border-dashed border-slate-200' : 'border-slate-200';
+                const bgColor = isError ? 'bg-red-50' : isBreak ? 'bg-orange-50' : isNotRun ? 'bg-slate-50/50' : 'bg-slate-50';
+
                 return (
-                  <div key={entry.node_id} className={`border rounded-xl overflow-hidden ${isError ? 'border-red-200' : 'border-slate-200'}`}>
-                    <div className={`px-4 py-2.5 flex items-center gap-2.5 ${isError ? 'bg-red-50' : 'bg-slate-50'}`}>
+                  <div key={entry.node_id} className={`border rounded-xl overflow-hidden ${borderColor} ${isNotRun ? 'opacity-50' : ''}`}>
+                    <div className={`px-4 py-2.5 flex items-center gap-2.5 ${bgColor}`}>
                       <span className="text-xs font-mono text-slate-400 shrink-0">{String(i + 1).padStart(2, '0')}</span>
-                      {isOk
-                        ? <CheckCircle size={14} className="text-emerald-500 shrink-0" />
-                        : isError
-                        ? <XCircle size={14} className="text-red-500 shrink-0" />
-                        : <AlertTriangle size={14} className="text-amber-500 shrink-0" />
-                      }
-                      <span className="text-xs font-semibold text-slate-700 flex-1">{entry.label || entry.type}</span>
+                      {isOk && <CheckCircle size={14} className="text-emerald-500 shrink-0" />}
+                      {isWarning && <AlertTriangle size={14} className="text-amber-500 shrink-0" />}
+                      {isError && <XCircle size={14} className="text-red-500 shrink-0" />}
+                      {isBreak && <ShieldAlert size={14} className="text-orange-500 shrink-0" />}
+                      {isNotRun && <Ban size={14} className="text-slate-300 shrink-0" />}
+                      <span className={`text-xs font-semibold flex-1 ${isNotRun ? 'text-slate-400' : 'text-slate-700'}`}>
+                        {entry.label || entry.type}
+                      </span>
                       <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                        isOk ? 'bg-emerald-100 text-emerald-700' :
-                        isError ? 'bg-red-100 text-red-700' :
-                        'bg-amber-100 text-amber-700'
-                      }`}>{entry.status}</span>
+                        isOk      ? 'bg-emerald-100 text-emerald-700' :
+                        isWarning ? 'bg-amber-100 text-amber-700' :
+                        isError   ? 'bg-red-100 text-red-700' :
+                        isBreak   ? 'bg-orange-100 text-orange-700' :
+                                    'bg-slate-100 text-slate-400'
+                      }`}>
+                        {isBreak ? 'Rupture' : isNotRun ? 'Non exécuté' : entry.status}
+                      </span>
                     </div>
-                    {entry.output && Object.keys(entry.output).length > 0 && (
+                    {!isNotRun && entry.output && Object.keys(entry.output).length > 0 && (
                       <div className="px-4 py-3 bg-white">
                         <pre className="text-xs text-slate-600 whitespace-pre-wrap font-mono overflow-x-auto max-h-48">
                           {JSON.stringify(entry.output, null, 2)}

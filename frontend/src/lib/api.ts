@@ -114,7 +114,7 @@ export interface NodeExecutionEntry {
   node_id: string;
   type: string;
   label: string;
-  status: 'ok' | 'error' | 'skipped';
+  status: 'ok' | 'warning' | 'error' | 'skipped' | 'break' | 'not_run';
   output: Record<string, unknown>;
 }
 
