@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Plus, GitBranch, FolderOpen, ChevronRight, Settings,
+  Plus, GitBranch, FolderOpen, Clock, ChevronRight,
   MoreVertical, Trash2, X, Loader2,
 } from 'lucide-react';
 import { api } from '../lib/api';
@@ -128,6 +128,18 @@ export function WorkflowsList() {
   const navigate = useNavigate();
   const { data: workflows, loading, error, refetch } = useApi(() => api.getWorkflows());
 
+  const { data: dossiers } = useApi(() => api.getDossiers(), []);
+
+  const dossierStatsByWorkflow = useMemo(() => {
+    const map: Record<string, { total: number; pending: number }> = {};
+    for (const d of dossiers ?? []) {
+      if (!map[d.workflow_id]) map[d.workflow_id] = { total: 0, pending: 0 };
+      map[d.workflow_id].total++;
+      if (d.statut === 'boite_reception') map[d.workflow_id].pending++;
+    }
+    return map;
+  }, [dossiers]);
+
   const [showCreate, setShowCreate] = useState(false);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -186,14 +198,14 @@ export function WorkflowsList() {
                     <div className="flex items-center gap-4 mt-3">
                       <div className="flex items-center gap-1.5 text-xs text-slate-500">
                         <FolderOpen size={12} />
-                        {wf.dossiers_count} dossiers traités
+                        {dossierStatsByWorkflow[wf.id]?.total ?? 0} dossier(s) traité(s)
                       </div>
                       <div className="flex items-center gap-1.5 text-xs text-slate-500">
-                        <Settings size={12} />
-                        {wf.documents.length} documents requis
+                        <Clock size={12} />
+                        {dossierStatsByWorkflow[wf.id]?.pending ?? 0} en attente
                       </div>
                       <span className="text-xs text-slate-400">
-                        MàJ {new Date(wf.updated_at).toLocaleDateString('fr-FR')}
+                        MàJ {new Date(wf.updated_at).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' })}
                       </span>
                     </div>
                   </div>
