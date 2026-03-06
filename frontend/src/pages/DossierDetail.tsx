@@ -13,7 +13,7 @@ import { useApi } from '../lib/useApi';
 import { LoadingSpinner, ErrorMessage } from '../components/ui/LoadingSpinner';
 import { StatusBadge } from '../components/ui/Badge';
 import { ConfirmModal } from '../components/ui/ConfirmModal';
-import type { DocumentItem, RecommendationDecision, FormBlock, WorkflowExecutionResult, AIAnalysisResult, NodeExecutionEntry, WorkflowNode } from '../lib/api';
+import type { DocumentItem, RecommendationDecision, FormBlock, WorkflowExecutionResult, AIAnalysisResult, AIAnalysisResultOverrides, NodeExecutionEntry, WorkflowNode } from '../lib/api';
 
 // ── File tree icon ─────────────────────────────────────────────────────────
 
@@ -91,6 +91,56 @@ function buildOrderedPipeline(nodes: WorkflowNode[]): WorkflowNode[] {
   return ordered;
 }
 
+// ── ResultValueToggle — inline boolean/statut toggle ──────────────────────
+
+function BoolToggle({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  return (
+    <div className="inline-flex rounded-lg border border-slate-200 overflow-hidden text-xs font-semibold">
+      <button
+        onClick={() => onChange('true')}
+        className={`flex items-center gap-1 px-3 py-1.5 transition-colors ${
+          value === 'true' ? 'bg-emerald-500 text-white' : 'bg-white text-slate-400 hover:bg-emerald-50 hover:text-emerald-600'
+        }`}
+      >
+        <CheckCircle size={11} /> Oui
+      </button>
+      <button
+        onClick={() => onChange('false')}
+        className={`flex items-center gap-1 px-3 py-1.5 border-l border-slate-200 transition-colors ${
+          value === 'false' ? 'bg-red-500 text-white' : 'bg-white text-slate-400 hover:bg-red-50 hover:text-red-500'
+        }`}
+      >
+        <XCircle size={11} /> Non
+      </button>
+    </div>
+  );
+}
+
+function StatutToggle({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  return (
+    <div className="inline-flex rounded-lg border border-slate-200 overflow-hidden text-xs font-semibold">
+      {(['ok', 'warning', 'error'] as const).map((s, i) => {
+        const active = value === s;
+        const colors = {
+          ok: active ? 'bg-emerald-500 text-white' : 'bg-white text-slate-400 hover:bg-emerald-50 hover:text-emerald-600',
+          warning: active ? 'bg-amber-500 text-white' : 'bg-white text-slate-400 hover:bg-amber-50 hover:text-amber-600',
+          error: active ? 'bg-red-500 text-white' : 'bg-white text-slate-400 hover:bg-red-50 hover:text-red-500',
+        };
+        const labels = { ok: '✓ OK', warning: '⚠ Attention', error: '✕ Erreur' };
+        return (
+          <button
+            key={s}
+            onClick={() => onChange(s)}
+            className={`px-3 py-1.5 transition-colors ${colors[s]} ${i > 0 ? 'border-l border-slate-200' : ''}`}
+          >
+            {labels[s]}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 // ── AnalysisPipelineCard ───────────────────────────────────────────────────
 
 function AnalysisPipelineCard({
@@ -102,8 +152,10 @@ function AnalysisPipelineCard({
   documents,
   result,
   isRunning,
+  isSaving,
   onViewDoc,
   onRun,
+  onSaveOverride,
 }: {
   displayLabel: string;
   nodeLabel: string;
@@ -113,12 +165,56 @@ function AnalysisPipelineCard({
   documents: DocumentItem[];
   result?: AIAnalysisResult;
   isRunning: boolean;
+  isSaving?: boolean;
   onViewDoc: (doc: DocumentItem) => void;
   onRun: () => void;
+  onSaveOverride: (overrides: AIAnalysisResultOverrides, reason: string) => Promise<void>;
 }) {
   const [sourcesOpen, setSourcesOpen] = useState(true);
   const [analysisOpen, setAnalysisOpen] = useState(true);
+  const [editing, setEditing] = useState(false);
+  const [draftValue, setDraftValue] = useState('');
+  const [draftStatut, setDraftStatut] = useState<'ok' | 'warning' | 'error'>('ok');
+  const [draftMessage, setDraftMessage] = useState('');
+  const [draftReason, setDraftReason] = useState('');
+
   const hasResult = !!result;
+  const isOverridden = result?.is_overridden ?? false;
+
+  // Effective values = override if present, else AI
+  const effectiveDetails = result?.manual_overrides?.details ?? result?.details ?? [];
+  const effectiveStatut = result?.manual_overrides?.statut ?? result?.statut ?? 'ok';
+  const effectiveMessage = result?.manual_overrides?.message ?? result?.message ?? '';
+
+  const aiDetails = result?.details ?? [];
+  const aiStatut = result?.statut ?? 'ok';
+  const aiMessage = result?.message ?? '';
+
+  const effectiveValue0 = effectiveDetails[0] ?? '';
+  const aiValue0 = aiDetails[0] ?? '';
+  const isBoolean = aiValue0.toLowerCase() === 'true' || aiValue0.toLowerCase() === 'false';
+
+  function startEdit() {
+    setDraftValue(effectiveValue0);
+    setDraftStatut(effectiveStatut as 'ok' | 'warning' | 'error');
+    setDraftMessage(effectiveMessage);
+    setDraftReason(result?.override_reason ?? '');
+    setEditing(true);
+  }
+
+  async function handleSave() {
+    const overrides: AIAnalysisResultOverrides = {};
+    if (draftValue !== aiValue0) overrides.details = [draftValue];
+    if (draftStatut !== aiStatut) overrides.statut = draftStatut;
+    if (draftMessage !== aiMessage) overrides.message = draftMessage;
+    await onSaveOverride(overrides, draftReason);
+    setEditing(false);
+  }
+
+  async function handleReset() {
+    await onSaveOverride({}, '');
+    setEditing(false);
+  }
 
   const sourceEntries = sources.map((id) => {
     const def = fieldDefs[id] ?? { label: id, type: 'short_answer' };
@@ -128,29 +224,81 @@ function AnalysisPipelineCard({
     return { id, label: def.label || id, isFile, doc, value };
   });
 
+  const borderColor = !hasResult ? 'border-slate-200'
+    : isOverridden ? 'border-violet-300'
+    : effectiveStatut === 'error' ? 'border-red-200'
+    : 'border-slate-200';
+
   return (
-    <div className={`bg-white border rounded-xl overflow-hidden mb-4 ${
-      hasResult && result.statut === 'error' ? 'border-red-200' : 'border-slate-200'
-    }`}>
-      {hasResult && result.statut === 'error' && (
+    <div className={`bg-white border rounded-xl overflow-hidden mb-4 ${borderColor}`}>
+      {/* KO banner */}
+      {hasResult && effectiveStatut === 'error' && !editing && (
         <div className="bg-red-50 border-b border-red-100 px-4 py-2 flex items-center gap-2">
           <ShieldAlert size={13} className="text-red-500" />
           <span className="text-xs text-red-600 font-semibold">Point bloquant — dossier KO</span>
+          {isOverridden && <span className="ml-auto text-xs text-violet-500 font-semibold">✏ Override manuel</span>}
         </div>
       )}
+      {isOverridden && effectiveStatut !== 'error' && !editing && (
+        <div className="bg-violet-50 border-b border-violet-100 px-4 py-1.5 flex items-center gap-2">
+          <Pencil size={11} className="text-violet-400" />
+          <span className="text-xs text-violet-600 font-semibold">Modifié manuellement</span>
+          {result?.override_reason && (
+            <span className="text-xs text-violet-400 truncate">— {result.override_reason}</span>
+          )}
+        </div>
+      )}
+
       <div className="p-4">
         {/* Header */}
         <div className="flex items-start gap-2 mb-3">
           <span className="text-xs font-bold text-blue-400 mt-0.5 shrink-0">{displayLabel}</span>
-          <p className="text-sm font-semibold text-slate-800 flex-1">{nodeLabel || <span className="italic text-slate-400">Nœud sans nom</span>}</p>
-          <button
-            onClick={onRun}
-            disabled={isRunning}
-            title={hasResult ? 'Relancer ce nœud' : 'Exécuter ce nœud'}
-            className="shrink-0 w-6 h-6 rounded-full flex items-center justify-center transition-all bg-slate-100 text-slate-400 hover:bg-blue-100 hover:text-blue-600 hover:scale-110 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {isRunning ? <Bot size={11} className="animate-pulse" /> : <Play size={11} className="ml-px" />}
-          </button>
+          <p className="text-sm font-semibold text-slate-800 flex-1">
+            {nodeLabel || <span className="italic text-slate-400">Nœud sans nom</span>}
+          </p>
+
+          {editing ? (
+            <div className="flex items-center gap-1.5 shrink-0">
+              <button
+                onClick={() => setEditing(false)}
+                className="px-2 py-1 text-xs rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 transition-colors"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={handleSave}
+                disabled={isSaving}
+                className="flex items-center gap-1 px-2 py-1 text-xs rounded-lg bg-violet-600 text-white hover:bg-violet-700 disabled:opacity-60 transition-colors"
+              >
+                {isSaving ? <Loader2 size={10} className="animate-spin" /> : <Save size={10} />}
+                Sauvegarder
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1 shrink-0">
+              {hasResult && (
+                <button
+                  onClick={startEdit}
+                  title="Modifier le résultat manuellement"
+                  className={`w-6 h-6 rounded-full flex items-center justify-center transition-all ${
+                    isOverridden
+                      ? 'bg-violet-100 text-violet-500 hover:bg-violet-200'
+                      : 'bg-slate-100 text-slate-400 hover:bg-violet-100 hover:text-violet-500'
+                  }`}
+                >
+                  <Pencil size={10} />
+                </button>
+              )}
+              <button
+                onClick={onRun}
+                disabled={isRunning}
+                title={hasResult ? 'Relancer ce nœud' : 'Exécuter ce nœud'}
+                className="w-6 h-6 rounded-full flex items-center justify-center transition-all bg-slate-100 text-slate-400 hover:bg-blue-100 hover:text-blue-600 hover:scale-110 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isRunning ? <Bot size={11} className="animate-pulse" /> : <Play size={11} className="ml-px" />}
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Sources */}
@@ -197,42 +345,138 @@ function AnalysisPipelineCard({
           </div>
         )}
 
-        {/* Result — only shown after analysis has run */}
-        {hasResult ? (
-          <>
-            <div className={`border rounded-lg px-4 py-3 flex items-center justify-center min-h-12 mb-3 ${
-              result.statut === 'ok' ? 'border-emerald-200 bg-emerald-50/50'
-              : result.statut === 'error' ? 'border-red-200 bg-red-50/50'
-              : 'border-amber-200 bg-amber-50/50'
-            }`}>
-              {result.details?.[0]
-                ? <FormatResult raw={result.details[0]} status={result.statut} />
-                : <span className="text-slate-400 italic text-sm">Aucun résultat</span>}
+        {/* ── EDIT MODE ── */}
+        {editing && hasResult && (
+          <div className="space-y-3 border border-violet-200 bg-violet-50/40 rounded-xl p-3 mb-3">
+            {/* Result value */}
+            <div>
+              <p className="text-xs font-semibold text-slate-500 mb-1.5">Résultat</p>
+              {isBoolean ? (
+                <div className="flex items-center gap-3">
+                  <BoolToggle value={draftValue} onChange={setDraftValue} />
+                  <span className="text-xs text-slate-400">🤖 IA : <span className="font-medium">{aiValue0 === 'true' ? 'Oui' : 'Non'}</span></span>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={draftValue}
+                    onChange={(e) => setDraftValue(e.target.value)}
+                    className="flex-1 text-sm border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-violet-400 bg-white"
+                  />
+                  <span className="text-xs text-slate-400 shrink-0">🤖 <span className="font-medium">{aiValue0}</span></span>
+                </div>
+              )}
             </div>
-            {result.message && (
-              <div className="bg-blue-50 border border-blue-100 rounded-lg overflow-hidden">
-                <button
-                  className="w-full flex items-center justify-between px-3 py-2 text-left"
-                  onClick={() => setAnalysisOpen((o) => !o)}
-                >
-                  <div className="flex items-center gap-2">
-                    <Sparkles size={13} className="text-blue-500" />
-                    <span className="text-xs font-semibold text-blue-700">Analyse IA</span>
-                  </div>
-                  {analysisOpen ? <ChevronUp size={12} className="text-blue-400" /> : <ChevronDown size={12} className="text-blue-400" />}
-                </button>
-                {analysisOpen && (
-                  <div className="px-3 pb-3 pt-2 border-t border-blue-100">
-                    <p className="text-xs text-blue-700 leading-relaxed">{result.message}</p>
-                  </div>
+
+            {/* Statut */}
+            <div>
+              <p className="text-xs font-semibold text-slate-500 mb-1.5">Statut du point</p>
+              <div className="flex items-center gap-3">
+                <StatutToggle value={draftStatut} onChange={(v) => setDraftStatut(v as 'ok' | 'warning' | 'error')} />
+                <span className="text-xs text-slate-400">🤖 IA : <span className="font-medium">{aiStatut}</span></span>
+              </div>
+            </div>
+
+            {/* Message / justification */}
+            <div>
+              <p className="text-xs font-semibold text-slate-500 mb-1.5">Justification</p>
+              <textarea
+                value={draftMessage}
+                onChange={(e) => setDraftMessage(e.target.value)}
+                rows={2}
+                className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-violet-400 bg-white resize-none"
+                placeholder="Justification personnalisée..."
+              />
+            </div>
+
+            {/* Override reason */}
+            <div>
+              <p className="text-xs font-semibold text-slate-500 mb-1.5">Motif de modification <span className="font-normal text-slate-400">(optionnel)</span></p>
+              <input
+                type="text"
+                value={draftReason}
+                onChange={(e) => setDraftReason(e.target.value)}
+                className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-violet-400 bg-white"
+                placeholder="Ex : cas exceptionnel validé par le responsable…"
+              />
+            </div>
+
+            {isOverridden && (
+              <button
+                onClick={handleReset}
+                disabled={isSaving}
+                className="text-xs text-red-400 hover:text-red-600 hover:underline disabled:opacity-50"
+              >
+                Réinitialiser aux valeurs IA
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* ── DISPLAY MODE ── */}
+        {!editing && (
+          hasResult ? (
+            <>
+              {/* Main result value */}
+              <div className={`border rounded-lg px-4 py-3 flex items-center justify-between min-h-12 mb-3 ${
+                effectiveStatut === 'ok' ? 'border-emerald-200 bg-emerald-50/50'
+                : effectiveStatut === 'error' ? 'border-red-200 bg-red-50/50'
+                : 'border-amber-200 bg-amber-50/50'
+              }`}>
+                <div className="flex flex-col gap-1">
+                  {effectiveValue0
+                    ? <FormatResult raw={effectiveValue0} status={effectiveStatut} />
+                    : <span className="text-slate-400 italic text-sm">Aucun résultat</span>}
+                  {/* Strikethrough original AI value when overridden */}
+                  {isOverridden && aiValue0 && effectiveValue0 !== aiValue0 && (
+                    <span className="text-xs text-slate-400 line-through">
+                      🤖 {aiValue0 === 'true' ? 'Oui' : aiValue0 === 'false' ? 'Non' : aiValue0}
+                    </span>
+                  )}
+                </div>
+                {isOverridden && (
+                  <span className="text-xs bg-violet-100 text-violet-600 border border-violet-200 px-1.5 py-0.5 rounded-full font-semibold shrink-0 ml-2">
+                    ✏ Manuel
+                  </span>
                 )}
               </div>
-            )}
-          </>
-        ) : (
-          <div className="bg-slate-50 border border-dashed border-slate-200 rounded-lg px-4 py-2.5 text-center">
-            <p className="text-xs text-slate-400 italic">Lancez l'analyse pour voir le résultat</p>
-          </div>
+
+              {/* Justification / message */}
+              {effectiveMessage && (
+                <div className={`border rounded-lg overflow-hidden ${isOverridden ? 'border-violet-100 bg-violet-50/30' : 'border-blue-100 bg-blue-50'}`}>
+                  <button
+                    className="w-full flex items-center justify-between px-3 py-2 text-left"
+                    onClick={() => setAnalysisOpen((o) => !o)}
+                  >
+                    <div className="flex items-center gap-2">
+                      {isOverridden ? <Pencil size={12} className="text-violet-400" /> : <Sparkles size={13} className="text-blue-500" />}
+                      <span className={`text-xs font-semibold ${isOverridden ? 'text-violet-600' : 'text-blue-700'}`}>
+                        {isOverridden ? 'Justification (modifiée)' : 'Analyse IA'}
+                      </span>
+                    </div>
+                    {analysisOpen
+                      ? <ChevronUp size={12} className="text-slate-400" />
+                      : <ChevronDown size={12} className="text-slate-400" />}
+                  </button>
+                  {analysisOpen && (
+                    <div className="px-3 pb-3 pt-2 border-t border-slate-100 space-y-1">
+                      <p className={`text-xs leading-relaxed ${isOverridden ? 'text-violet-700' : 'text-blue-700'}`}>
+                        {effectiveMessage}
+                      </p>
+                      {isOverridden && aiMessage && aiMessage !== effectiveMessage && (
+                        <p className="text-xs text-slate-400 line-through leading-relaxed">🤖 {aiMessage}</p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="bg-slate-50 border border-dashed border-slate-200 rounded-lg px-4 py-2.5 text-center">
+              <p className="text-xs text-slate-400 italic">Lancez l'analyse pour voir le résultat</p>
+            </div>
+          )
         )}
       </div>
     </div>
@@ -338,6 +582,7 @@ export function DossierDetail() {
   const [editedReponses, setEditedReponses] = useState<Record<string, unknown>>({});
   const [savingReponses, setSavingReponses] = useState(false);
   const [replacingDocId, setReplacingDocId] = useState<string | null>(null);
+  const [savingResultId, setSavingResultId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -383,8 +628,8 @@ export function DossierDetail() {
       nodeId,
       index: i + 1,
       label: r.label,
-      status: r.statut as 'ok' | 'warning' | 'error',
-      isEligibilityKO: r.statut === 'error',
+      status: (r.manual_overrides?.statut ?? r.statut) as 'ok' | 'warning' | 'error',
+      isEligibilityKO: (r.manual_overrides?.statut ?? r.statut) === 'error',
     };
   });
 
@@ -449,6 +694,22 @@ export function DossierDetail() {
       console.error(e);
     } finally {
       setRunningNodeIds((prev) => { const s = new Set(prev); s.delete(nodeId); return s; });
+    }
+  };
+
+  const handleSaveOverride = async (
+    resultId: string,
+    overrides: import('../lib/api').AIAnalysisResultOverrides,
+    reason: string
+  ) => {
+    setSavingResultId(resultId);
+    try {
+      await api.updateAnalysisResult(dossier.reference, resultId, { overrides, override_reason: reason });
+      await refetch();
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setSavingResultId(null);
     }
   };
 
@@ -646,7 +907,18 @@ export function DossierDetail() {
         <div className="flex-1 flex flex-col overflow-hidden bg-slate-50">
           <div className="bg-white border-b border-slate-200 px-5 py-3 shrink-0 flex items-center justify-between">
             <div>
-              <p className="text-sm font-semibold text-slate-800">Formulaire d'instruction</p>
+              <div className="flex items-center gap-2">
+                <p className="text-sm font-semibold text-slate-800">Formulaire d'instruction</p>
+                {workflow && (
+                  <button
+                    onClick={() => navigate(`/workflows/${workflow.id}`)}
+                    className="flex items-center gap-1 text-xs text-blue-500 hover:text-blue-700 hover:underline transition-colors"
+                  >
+                    <ExternalLink size={11} />
+                    {workflow.nom}
+                  </button>
+                )}
+              </div>
               <p className="text-xs text-slate-500">
                 {nonTriggerNodes.length > 0
                   ? `${qCount} analyse${qCount !== 1 ? 's' : ''}${breakCount > 0 ? ` · ${breakCount} rupture${breakCount !== 1 ? 's' : ''}` : ''}`
@@ -662,6 +934,7 @@ export function DossierDetail() {
                 const displayInfo = nodeDisplayInfo.get(node.id);
                 if (node.type === 'analysis') {
                   const sources = (cfg.sources as string[]) ?? [];
+                  const resultId = `auto_${node.id}`;
                   return (
                     <AnalysisPipelineCard
                       key={node.id}
@@ -671,10 +944,12 @@ export function DossierDetail() {
                       fieldDefs={fieldDefs}
                       reponses={dossier.reponses}
                       documents={dossier.documents}
-                      result={analysisResultMap.get(`auto_${node.id}`)}
+                      result={analysisResultMap.get(resultId)}
                       isRunning={runningNodeIds.has(node.id)}
+                      isSaving={savingResultId === resultId}
                       onViewDoc={setViewerDoc}
                       onRun={() => handleLaunchSingleNode(node.id)}
+                      onSaveOverride={(overrides, reason) => handleSaveOverride(resultId, overrides, reason)}
                     />
                   );
                 }

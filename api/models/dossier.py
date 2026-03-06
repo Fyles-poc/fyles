@@ -52,6 +52,11 @@ class AIAnalysisResult(BaseModel):
     statut: str  # ok | warning | error
     message: str
     details: list[str] = Field(default_factory=list)
+    # Manual override fields
+    manual_overrides: dict = Field(default_factory=dict)
+    override_reason: Optional[str] = None
+    is_overridden: bool = False
+    overridden_at: Optional[str] = None
 
 
 class AIRecommendation(BaseModel):
