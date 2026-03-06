@@ -18,7 +18,7 @@ from api.models.dossier import (
     Dossier, Demandeur, DocumentItem, AIAnalysisResult,
     AIRecommendation, DossierStatus, DocumentStatus, RecommendationDecision,
 )
-from api.models.workflow import Workflow, WorkflowDocument, WorkflowValidation, WorkflowNode, AIConfig, FormPage, FormBlock, FormCondition
+from api.models.workflow import Workflow, WorkflowNode, AIConfig, FormPage, FormBlock, FormCondition
 from api.models.user import User, UserRole
 from api.models.organization import Organization
 from api.storage import get_minio_client, ensure_bucket
@@ -33,7 +33,7 @@ DOSSIERS_META = [
         "reference": "DOS-2026-00001",
         "nom": "Harkfell", "prenom": "Jean",
         "email": "tisseo.aam.test@yopmail.com",
-        "type": "Tarif préférentiel",
+        "type": "Tarif Préférentiel",
         "workflow": "tarif",
         "statut": DossierStatus.en_instruction,
         "confiance_ia": 72,
@@ -44,7 +44,7 @@ DOSSIERS_META = [
         "reference": "DOS-2026-00002",
         "nom": "Thomas", "prenom": "Dom",
         "email": "dom.thomas@orange.fr",
-        "type": "Tarif préférentiel",
+        "type": "Tarif Préférentiel",
         "workflow": "tarif",
         "statut": DossierStatus.en_attente,
         "confiance_ia": 58,
@@ -55,7 +55,7 @@ DOSSIERS_META = [
         "reference": "DOS-2026-00003",
         "nom": "Toison", "prenom": "Thierry",
         "email": "toisonthierry@gmail.com",
-        "type": "Tarif préférentiel",
+        "type": "Tarif Préférentiel",
         "workflow": "tarif",
         "statut": DossierStatus.approuve,
         "confiance_ia": 91,
@@ -66,7 +66,7 @@ DOSSIERS_META = [
         "reference": "DOS-2026-00004",
         "nom": "Lucio", "prenom": "Emma",
         "email": "emma31lucio@yahoo.com",
-        "type": "Tarif préférentiel",
+        "type": "Tarif Préférentiel",
         "workflow": "tarif",
         "statut": DossierStatus.en_instruction,
         "confiance_ia": 65,
@@ -88,7 +88,7 @@ DOSSIERS_META = [
         "reference": "DOS-2026-00006",
         "nom": "Durand", "prenom": "Eglantine",
         "email": "eglantine1331@gmail.com",
-        "type": "Tarif préférentiel",
+        "type": "Tarif Préférentiel",
         "workflow": "tarif",
         "statut": DossierStatus.refuse,
         "confiance_ia": 85,
@@ -213,104 +213,199 @@ async def seed():
     # ── Workflows ──────────────────────────────────────────────────────────────
     print("📋 Insertion des workflows...")
 
-    # Workflow 1 — Vérification CNI (tarif préférentiel)
+    # Workflow 1 — Personnes en situation de handicap (tarif préférentiel)
     wf_tarif = Workflow(
-        nom="Vérification CNI",
-        description="Workflow d'instruction pour les demandes de tarif préférentiel énergie",
-        type="Tarif préférentiel",
-        dossiers_count=127,
-        created_at=datetime(2026, 1, 15, 10, 0),
-        updated_at=datetime(2026, 2, 20, 14, 30),
+        nom="Personnes en situation de handicap",
+        description="Ce workflow permet de vérifier si l'usager est éligible aux tarifs pour les personnes en situation d'handicap.",
+        type="Tarif Préférentiel",
+        dossiers_count=0,
+        created_at=datetime(2026, 3, 6, 16, 41),
+        updated_at=datetime(2026, 3, 6, 17, 13),
         ai_config=AIConfig(
             model="claude-sonnet-4-6", temperature=0.1, seuil_confiance_auto=90,
-            prompt_systeme=(
-                "Tu es un expert en instruction de dossiers administratifs. "
-                "Analyse les documents fournis et vérifie leur conformité aux règles définies."
-            ),
+            prompt_systeme="",
         ),
-        documents=[
-            WorkflowDocument(
-                id="doc-1", nom="Formulaire de demande",
-                description="Formulaire officiel de demande de tarif préférentiel rempli et signé",
-                statut="OBLIGATOIRE",
-                validations=[
-                    WorkflowValidation(id="v1", type="required_fields", label="Champs obligatoires",
-                                       prompt="Vérifie que le formulaire contient nom, prénom, date de naissance, adresse, téléphone"),
-                    WorkflowValidation(id="v2", type="llm_check", label="Cohérence des informations",
-                                       prompt="Vérifie la cohérence globale des informations saisies"),
-                ],
-            ),
-            WorkflowDocument(
-                id="doc-2", nom="Pièce d'identité",
-                description="CNI ou passeport en cours de validité", statut="OBLIGATOIRE",
-                validations=[
-                    WorkflowValidation(id="v3", type="doc_type", label="Type de document",
-                                       prompt="Vérifie que le document est une CNI ou un passeport"),
-                    WorkflowValidation(id="v4", type="llm_check", label="Validité",
-                                       prompt="Vérifie que la pièce d'identité est en cours de validité"),
-                ],
-            ),
-            WorkflowDocument(
-                id="doc-3", nom="Justificatif de domicile",
-                description="Justificatif de domicile de moins de 3 mois", statut="OBLIGATOIRE",
-                validations=[
-                    WorkflowValidation(id="v5", type="llm_check", label="Date du document",
-                                       prompt="Vérifie que le justificatif date de moins de 3 mois"),
-                ],
-            ),
-            WorkflowDocument(
-                id="doc-4", nom="Avis d'imposition",
-                description="Avis d'imposition sur les revenus N-1", statut="OBLIGATOIRE",
-                validations=[
-                    WorkflowValidation(id="v7", type="llm_check", label="Plafond de revenus",
-                                       prompt="Vérifie que le revenu fiscal de référence est inférieur au plafond de 22 000 €"),
-                ],
-            ),
-        ],
+        documents=[],
         nodes=[
-            WorkflowNode(id="n1", type="document_check", label="Vérification complétude", next="n2"),
-            WorkflowNode(id="n2", type="identity_match", label="Correspondance identité", next="n3"),
-            WorkflowNode(id="n3", type="condition", label="Revenus \u2264 plafond ?",
-                         next=[{"condition": "oui", "node": "n4"}, {"condition": "non", "node": "n5"}]),
-            WorkflowNode(id="n4", type="decision", label="Recommander approbation"),
-            WorkflowNode(id="n5", type="decision", label="Recommander refus"),
+            WorkflowNode(
+                id="node_cbfcdcda-1724-48af-bb8a-f70ab29e9b80",
+                type="analysis",
+                label="Vérification de la pièce d'identité",
+                config={
+                    "instruction": "Vérifie que la pièce d'identité téléversée a ses informations correctes avec ce qu'a rentré l'utilisateur dans le formulaire. ",
+                    "sources": [
+                        "b11a5748b-ecc6-46eb-ad13-31b548dae69c",
+                        "bc45e5dd4-55d9-4146-8245-07e0bce63c10",
+                        "b4ff4e96d-83b1-4f6b-8c0b-164d609169c3",
+                    ],
+                    "output_type": "boolean",
+                    "output_config": {},
+                },
+                next="node_82443149-9897-4d17-8656-f1d339ca3f35",
+            ),
+            WorkflowNode(
+                id="node_82443149-9897-4d17-8656-f1d339ca3f35",
+                type="analysis",
+                label="Vérification du justificatif d'handicap",
+                config={
+                    "instruction": "Vérifie par rapport à la date d'aujourd'hui que le document est valide. Et en fonction du choix du niveau d'invalidité sélectionné par l'utilisateur dans le formulaire, vérifier que le justificatif correspond au cas sélectionner. ",
+                    "sources": [
+                        "b30fd895e-5cfa-4f25-bd9f-c7af66ed0f8d",
+                        "b2d86cd20-eddb-4bb5-8b86-1ab18efd0263",
+                        "bcc4ced4a-80b0-4860-8a67-249c0c8eb883",
+                    ],
+                    "output_type": "boolean",
+                    "output_config": {},
+                },
+                next=None,
+            ),
         ],
         formulaire_demande=[
             FormPage(
-                id="main",
-                title="Formulaire de demande",
+                id="page_1",
+                title="Informations personnelles",
                 blocks=[
-                    FormBlock(id="b634ee1ef-06c4-4e12-bfb1-c09d09179496", type="short_answer",
-                              label="Nom et Prénom", required=True),
-                    FormBlock(id="bca40cb0b-30c9-4ea0-a746-fb513d626dd3", type="text",
-                              label="giuiug", required=False),
                     FormBlock(
-                        id="c644f6e59-118f-409c-8277-eeecff200524", type="container",
-                        label="edede", required=False,
+                        id="bed44c7d1-02dd-4fb4-b4f2-9175b7a66a4d",
+                        type="multiple_choice",
+                        label="Civilité",
+                        required=True,
+                        options=["Monsieur", "Madame", "Autre"],
+                    ),
+                    FormBlock(id="b11a5748b-ecc6-46eb-ad13-31b548dae69c", type="short_answer", label="Prénom", required=True),
+                    FormBlock(id="bc45e5dd4-55d9-4146-8245-07e0bce63c10", type="short_answer", label="Nom", required=True),
+                    FormBlock(id="bb06b9286-d378-438b-9c1d-e5ecc6df13c7", type="short_answer", label="Né", required=True),
+                    FormBlock(id="bb502c66b-a5c1-4d6b-88d3-a4ce4c96841d", type="short_answer", label="Nom de la voie", required=True),
+                    FormBlock(id="b5854c197-85ae-4866-8a84-c2a6def0edae", type="short_answer", label="Code postal - Ville", required=True),
+                    FormBlock(id="bc0cd95b3-f56e-4cc5-880d-1e4c464fae55", type="phone", label="Téléphone", required=True),
+                ],
+            ),
+            FormPage(
+                id="page_c320e284-d9f4-4f86-b6f9-cd564f025cb7",
+                title="Photo identité couleur récente",
+                blocks=[
+                    FormBlock(
+                        id="bb4eb52c6-e098-41b9-909f-c0d3da120cb4",
+                        type="header",
+                        label="Photo identité couleur récente (visage dégagé sans lunettes, 35-45mm)",
+                        required=False,
+                    ),
+                    FormBlock(
+                        id="ba96ee28e-ea16-45fd-8d47-cc340bd139b6",
+                        type="text",
+                        label=" Les champs marqués d'un astérisque (*) sont obligatoires.",
+                        required=False,
+                    ),
+                    FormBlock(
+                        id="b4a0ad5ef-e7d4-4b54-8665-30fa86e555b0",
+                        type="file_upload",
+                        label="Merci de télécharger votre photo d'identité",
+                        required=True,
+                    ),
+                    FormBlock(
+                        id="b72b28a66-7f06-4ae2-8f3e-c2a2d3b8adcd",
+                        type="text",
+                        label="Formats autorisés : png, jpg, jpeg  Taille max : 3Mo",
+                        required=False,
+                    ),
+                ],
+            ),
+            FormPage(
+                id="page_316ba29b-d15e-4edc-961e-8902727c3b0d",
+                title="Carte identité",
+                blocks=[
+                    FormBlock(
+                        id="bfd650d07-4c0e-44e6-aff0-c5c8497f4c48",
+                        type="header",
+                        label="Pièce d'identité (Carte Nationale, Passeport, ...)",
+                        required=False,
+                    ),
+                    FormBlock(
+                        id="bebfe0342-a715-47aa-b80f-1fef048f5ec9",
+                        type="text",
+                        label="Merci de télécharger votre pièce d'identité, recto verso (carte nationale d'identité, passeport, etc.)",
+                        required=False,
+                    ),
+                    FormBlock(
+                        id="b4ff4e96d-83b1-4f6b-8c0b-164d609169c3",
+                        type="file_upload",
+                        label="Pièce d'identité, recto verso (carte nationale d'identité, passeport, etc.)",
+                        required=True,
+                    ),
+                    FormBlock(
+                        id="ba0aeebc8-94cc-4676-b25b-1ea0cb7eb8b3",
+                        type="text",
+                        label="Formats autorisés : pdf, png, jpg, jpeg  Taille max : 3Mo",
+                        required=False,
+                    ),
+                ],
+            ),
+            FormPage(
+                id="page_9bd4b218-637f-4f68-9abe-c512df004395",
+                title="Justificatif Invalidité",
+                blocks=[
+                    FormBlock(
+                        id="b30fd895e-5cfa-4f25-bd9f-c7af66ed0f8d",
+                        type="multiple_choice",
+                        label="Sélectionnez votre niveau d'invalidité",
+                        required=True,
+                        options=["Invalide de 50 à 79%", "Invalide de +80%"],
+                    ),
+                    FormBlock(
+                        id="c4ca465b8-cab9-4d0f-83ae-43141bb9a1a9",
+                        type="container",
+                        label="Niveau d'invalidité de 50 à 79%",
+                        required=False,
                         conditions=[
-                            FormCondition(field_id="b634ee1ef-06c4-4e12-bfb1-c09d09179496",
-                                          operator="contains", value="paul"),
+                            FormCondition(
+                                field_id="b30fd895e-5cfa-4f25-bd9f-c7af66ed0f8d",
+                                operator="equals",
+                                value="Invalide de 50 à 79%",
+                            ),
                         ],
                         blocks=[
-                            FormBlock(id="bf30c8c73-253a-4750-b8b0-34da85848dfb",
-                                      type="short_answer", label="dedeed", required=True),
+                            FormBlock(
+                                id="b2d86cd20-eddb-4bb5-8b86-1ab18efd0263",
+                                type="file_upload",
+                                label="Téléchargez votre justificatif de 50 à 79%",
+                                required=True,
+                            ),
                         ],
                     ),
-                    FormBlock(id="b76ca80f1-52d1-478b-bef8-1507fcc8ab21", type="file_upload",
-                              label="", required=True),
+                    FormBlock(
+                        id="c2f73a5af-655f-4b8e-bdf3-2757597867af",
+                        type="container",
+                        label="Niveau d'invalidité de +80%",
+                        required=False,
+                        conditions=[
+                            FormCondition(
+                                field_id="b30fd895e-5cfa-4f25-bd9f-c7af66ed0f8d",
+                                operator="equals",
+                                value="Invalide de +80%",
+                            ),
+                        ],
+                        blocks=[
+                            FormBlock(
+                                id="bcc4ced4a-80b0-4860-8a67-249c0c8eb883",
+                                type="file_upload",
+                                label="Téléchargez votre justificatif de de +80%",
+                                required=True,
+                            ),
+                        ],
+                    ),
                 ],
             ),
         ],
     )
 
-    # Workflow 2 — Verif test (aide logement) avec pipeline d'automatisation IA
+    # Workflow 2 — Vérification de la CNI (aide logement)
     wf_logement = Workflow(
-        nom="Verif test",
+        nom="Vérification de la CNI",
         description="Workflow d'instruction pour les demandes d'aide au logement social",
         type="Aide logement",
-        dossiers_count=43,
+        dossiers_count=0,
         created_at=datetime(2026, 1, 20, 9, 0),
-        updated_at=datetime(2026, 2, 15, 11, 0),
+        updated_at=datetime(2026, 3, 6, 16, 21),
         ai_config=AIConfig(
             model="claude-sonnet-4-6", temperature=0.1, seuil_confiance_auto=85,
             prompt_systeme="Tu es un expert en aides sociales au logement.",
@@ -320,12 +415,9 @@ async def seed():
             WorkflowNode(
                 id="node_3782911d-e434-4a96-b12b-1954b6d17acf",
                 type="analysis",
-                label="Est-ce que les infos du form sont coh\u00e9rentes avec la CNI ?",
+                label="Est-ce que les infos du form sont cohérentes avec la CNI ?",
                 config={
-                    "instruction": (
-                        "V\u00e9rifie que les informations 'Nom', 'Pr\u00e9nom' et 'Date de naissance' "
-                        "du formulaire de demande soient coh\u00e9rents avec la CNI."
-                    ),
+                    "instruction": "Vérifie que les informations 'Nom', 'Prénom' et 'Date de naissance' du formulaire de demande soient cohérents avec la CNI.",
                     "sources": [
                         "bac5249c2-3f6e-4b25-b58a-29c79eb094d2",
                         "b28d8cc12-ac16-4e19-bd39-d1edccfdd64a",
@@ -335,17 +427,29 @@ async def seed():
                     "output_type": "boolean",
                     "output_config": {},
                 },
+                next="node_4e138496-cd8b-48f4-910c-4570080540b4",
+            ),
+            WorkflowNode(
+                id="node_4e138496-cd8b-48f4-910c-4570080540b4",
+                type="break",
+                label="Break 1",
+                config={
+                    "conditions": [
+                        {
+                            "source_node_id": "node_3782911d-e434-4a96-b12b-1954b6d17acf",
+                            "operator": "is_false",
+                        }
+                    ],
+                    "condition_logic": "AND",
+                },
                 next="node_fdb6d95e-58db-4ba2-9c11-0de2c9ef8de4",
             ),
             WorkflowNode(
                 id="node_fdb6d95e-58db-4ba2-9c11-0de2c9ef8de4",
                 type="analysis",
-                label="V\u00e9rification",
+                label="Vérification",
                 config={
-                    "instruction": (
-                        "Je veux que tu v\u00e9rifies la coh\u00e9rence entre les informations fournies "
-                        "par l'utilisateur dans le formulaire et le document fourni."
-                    ),
+                    "instruction": "Je veux que tu vérifies la cohérence entre les informations fournies par l'utilisateur dans le formulaire et le document fourni.",
                     "sources": [
                         "bdd3d3b8e-b0c9-486e-9dfb-c272a537ef71",
                         "b72558fa5-da1d-4a38-8931-a15b86f74ea7",
@@ -363,16 +467,13 @@ async def seed():
                 id="main",
                 title="Renseignements personnels",
                 blocks=[
-                    FormBlock(id="bac5249c2-3f6e-4b25-b58a-29c79eb094d2", type="short_answer",
-                              label="Nom", required=True),
-                    FormBlock(id="be9ef4e85-81e2-4897-bf64-446fb202cdbf", type="short_answer",
-                              label="Pr\u00e9nom", required=True),
-                    FormBlock(id="b28d8cc12-ac16-4e19-bd39-d1edccfdd64a", type="date",
-                              label="Date de naissance", required=True),
+                    FormBlock(id="bac5249c2-3f6e-4b25-b58a-29c79eb094d2", type="short_answer", label="Nom", required=True),
+                    FormBlock(id="be9ef4e85-81e2-4897-bf64-446fb202cdbf", type="short_answer", label="Prénom", required=True),
+                    FormBlock(id="b28d8cc12-ac16-4e19-bd39-d1edccfdd64a", type="date", label="Date de naissance", required=True),
                     FormBlock(
                         id="b9ca1dc0f-0213-4e58-9f03-7243bb5735f4",
                         type="file_upload",
-                        label="T\u00e9l\u00e9chargez votre Carte Nationale D'identit\u00e9 pour la v\u00e9rification.",
+                        label="Téléchargez votre Carte Nationale D'identité pour la vérification.",
                         required=True,
                     ),
                 ],
@@ -381,14 +482,10 @@ async def seed():
                 id="page_c73815dc-2f6b-42b9-b3ef-7ee8eacceef2",
                 title="Verif logement",
                 blocks=[
-                    FormBlock(id="bdd3d3b8e-b0c9-486e-9dfb-c272a537ef71", type="short_answer",
-                              label="Adresse compl\u00e8te", required=True),
-                    FormBlock(id="b72558fa5-da1d-4a38-8931-a15b86f74ea7", type="short_answer",
-                              label="Code postal", required=True),
-                    FormBlock(id="b267ae4a0-b484-4dc6-888c-c2bfdc36588f", type="short_answer",
-                              label="Ville", required=True),
-                    FormBlock(id="b69325e7a-4f8b-45d9-8c07-bc4f3cb1cc30", type="file_upload",
-                              label="Document", required=True),
+                    FormBlock(id="bdd3d3b8e-b0c9-486e-9dfb-c272a537ef71", type="short_answer", label="Adresse complète", required=True),
+                    FormBlock(id="b72558fa5-da1d-4a38-8931-a15b86f74ea7", type="short_answer", label="Code postal", required=True),
+                    FormBlock(id="b267ae4a0-b484-4dc6-888c-c2bfdc36588f", type="short_answer", label="Ville", required=True),
+                    FormBlock(id="b69325e7a-4f8b-45d9-8c07-bc4f3cb1cc30", type="file_upload", label="Document", required=True),
                 ],
             ),
         ],
@@ -411,7 +508,6 @@ async def seed():
             type=meta["type"],
             workflow_id=wf_ids[meta["workflow"]],
             statut=meta["statut"],
-            confiance_ia=meta["confiance_ia"],
             derniere_maj=datetime.utcnow(),
             instructeur=meta["instructeur"],
             documents=docs,
