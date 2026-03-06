@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
 import {
-  Zap, Bot, Plus, Trash2, Settings2, X,
-  PlusCircle, MinusCircle, Upload,
+  Zap, Bot, Trash2, Settings2, X, Plus,
+  PlusCircle, MinusCircle, Upload, Ban,
 } from 'lucide-react';
 import type { WorkflowNode, FormBlock } from '../lib/api';
 import type { LucideIcon } from 'lucide-react';
@@ -16,6 +16,21 @@ const OUTPUT_TYPES: { value: OutputType; label: string; description: string; emo
   { value: 'text',           label: 'Texte',           description: 'Réponse libre',        emoji: '💬' },
   { value: 'classification', label: 'Classification',  description: 'Catégories définies', emoji: '🏷️' },
   { value: 'structured',     label: 'Structuré',       description: 'Champs nommés',       emoji: '📋' },
+];
+
+interface BreakCondition {
+  source_node_id: string;
+  operator: string;
+  value?: string | number;
+}
+
+const OPERATORS: { value: string; label: string; needsValue: boolean; forTypes: OutputType[] }[] = [
+  { value: 'is_false',      label: 'est Non (false)',   needsValue: false, forTypes: ['boolean'] },
+  { value: 'is_true',       label: 'est Oui (true)',    needsValue: false, forTypes: ['boolean'] },
+  { value: 'less_than',     label: 'est inférieur à',   needsValue: true,  forTypes: ['score'] },
+  { value: 'greater_than',  label: 'est supérieur à',   needsValue: true,  forTypes: ['score'] },
+  { value: 'equals',        label: 'est égal à',        needsValue: true,  forTypes: ['text', 'classification', 'score'] },
+  { value: 'not_equals',    label: 'est différent de',  needsValue: true,  forTypes: ['text', 'classification', 'score'] },
 ];
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -33,60 +48,180 @@ function isFileField(type: string) {
 function nodeColors(type: string) {
   if (type === 'trigger')
     return { bg: 'bg-violet-50', border: 'border-violet-200', icon: 'bg-violet-100 text-violet-600' };
+  if (type === 'break')
+    return { bg: 'bg-orange-50', border: 'border-orange-200', icon: 'bg-orange-100 text-orange-600' };
   return { bg: 'bg-blue-50', border: 'border-blue-200', icon: 'bg-blue-100 text-blue-600' };
 }
 
 function nodeIcon(type: string): LucideIcon {
-  return type === 'trigger' ? Zap : Bot;
+  if (type === 'trigger') return Zap;
+  if (type === 'break') return Ban;
+  return Bot;
 }
 
 function defaultAnalysisConfig(): Record<string, unknown> {
   return { instruction: '', sources: [], output_type: 'boolean', output_config: {} };
 }
 
-// ── NodeSummary ───────────────────────────────────────────────────────────────
+function defaultBreakConfig(): Record<string, unknown> {
+  return { conditions: [], condition_logic: 'AND' };
+}
 
-function NodeSummary({ node, formFields }: { node: WorkflowNode; formFields: FormBlock[] }) {
-  if (node.type !== 'analysis') return null;
-  const cfg = node.config as Record<string, unknown> | undefined;
-  if (!cfg) return null;
+// ── TypePicker ────────────────────────────────────────────────────────────────
 
-  const instruction = cfg.instruction as string | undefined;
-  const sources = (cfg.sources as string[]) ?? [];
-  const outputType = cfg.output_type as OutputType | undefined;
-  const outputLabel = OUTPUT_TYPES.find((o) => o.value === outputType)?.label;
-
-  const sourceLabels = sources
-    .map((id) => formFields.find((f) => f.id === id)?.label ?? id)
-    .slice(0, 3);
-
+function TypePicker({
+  onSelectAnalysis,
+  onSelectBreak,
+  onClose,
+}: {
+  onSelectAnalysis: () => void;
+  onSelectBreak: () => void;
+  onClose: () => void;
+}) {
   return (
-    <div className="space-y-1.5 mt-1">
-      {instruction ? (
-        <p className="text-xs text-slate-500 line-clamp-2">{instruction}</p>
-      ) : (
-        <p className="text-xs text-slate-400 italic">Instruction non configurée</p>
-      )}
-      <div className="flex items-center gap-1.5 flex-wrap">
-        {sourceLabels.map((l) => (
-          <span key={l} className="text-[10px] bg-amber-50 text-amber-700 border border-amber-200 px-1.5 py-0.5 rounded font-medium">
-            {l}
-          </span>
-        ))}
-        {sources.length > 3 && (
-          <span className="text-[10px] text-slate-400">+{sources.length - 3}</span>
-        )}
-        {outputLabel && (
-          <span className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded font-medium ml-auto">
-            {outputLabel}
-          </span>
-        )}
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-2xl shadow-2xl p-5 w-76"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <p className="text-sm font-semibold text-slate-700 mb-4 text-center">Ajouter un nœud</p>
+        <div className="flex gap-3">
+          <button
+            onClick={onSelectAnalysis}
+            className="flex-1 flex flex-col items-center gap-2.5 p-4 border-2 border-slate-200 rounded-xl hover:border-blue-300 hover:bg-blue-50 transition-all text-left"
+          >
+            <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center">
+              <Bot size={20} className="text-blue-600" />
+            </div>
+            <div className="text-center">
+              <p className="text-sm font-semibold text-slate-700">Analyse IA</p>
+              <p className="text-xs text-slate-400 mt-0.5 leading-snug">Interroge Claude sur les données</p>
+            </div>
+          </button>
+          <button
+            onClick={onSelectBreak}
+            className="flex-1 flex flex-col items-center gap-2.5 p-4 border-2 border-slate-200 rounded-xl hover:border-orange-300 hover:bg-orange-50 transition-all text-left"
+          >
+            <div className="w-10 h-10 rounded-xl bg-orange-100 flex items-center justify-center">
+              <Ban size={20} className="text-orange-600" />
+            </div>
+            <div className="text-center">
+              <p className="text-sm font-semibold text-slate-700">Rupture</p>
+              <p className="text-xs text-slate-400 mt-0.5 leading-snug">Arrête selon une condition</p>
+            </div>
+          </button>
+        </div>
       </div>
     </div>
   );
 }
 
-// ── ConfigModal ───────────────────────────────────────────────────────────────
+// ── NodeSummary ───────────────────────────────────────────────────────────────
+
+function NodeSummary({
+  node,
+  formFields,
+  allNodes,
+}: {
+  node: WorkflowNode;
+  formFields: FormBlock[];
+  allNodes: WorkflowNode[];
+}) {
+  if (node.type === 'analysis') {
+    const cfg = node.config as Record<string, unknown> | undefined;
+    if (!cfg) return null;
+
+    const instruction = cfg.instruction as string | undefined;
+    const sources = (cfg.sources as string[]) ?? [];
+    const outputType = cfg.output_type as OutputType | undefined;
+    const outputLabel = OUTPUT_TYPES.find((o) => o.value === outputType)?.label;
+
+    const sourceLabels = sources
+      .map((id) => formFields.find((f) => f.id === id)?.label ?? id)
+      .slice(0, 3);
+
+    return (
+      <div className="space-y-1.5 mt-1">
+        {instruction ? (
+          <p className="text-xs text-slate-500 line-clamp-2">{instruction}</p>
+        ) : (
+          <p className="text-xs text-slate-400 italic">Instruction non configurée</p>
+        )}
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {sourceLabels.map((l) => (
+            <span key={l} className="text-[10px] bg-amber-50 text-amber-700 border border-amber-200 px-1.5 py-0.5 rounded font-medium">
+              {l}
+            </span>
+          ))}
+          {sources.length > 3 && (
+            <span className="text-[10px] text-slate-400">+{sources.length - 3}</span>
+          )}
+          {outputLabel && (
+            <span className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded font-medium ml-auto">
+              {outputLabel}
+            </span>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  if (node.type === 'break') {
+    const cfg = node.config as Record<string, unknown> | undefined;
+    if (!cfg) return null;
+    const conditions = (cfg.conditions as BreakCondition[]) ?? [];
+    const logic = (cfg.condition_logic as string) ?? 'AND';
+
+    if (conditions.length === 0) {
+      return <p className="text-xs text-slate-400 italic mt-1">Aucune condition configurée</p>;
+    }
+
+    return (
+      <div className="mt-1 space-y-1">
+        {conditions.map((c, i) => {
+          const sourceNode = allNodes.find((n) => n.id === c.source_node_id);
+          const opLabel = OPERATORS.find((o) => o.value === c.operator)?.label ?? c.operator;
+          return (
+            <div key={i} className="flex items-center gap-1 flex-wrap">
+              {i > 0 && (
+                <span className="text-[10px] font-bold text-orange-500">{logic}</span>
+              )}
+              <span className="text-[10px] text-slate-500 font-medium">
+                {sourceNode?.label ?? c.source_node_id}
+              </span>
+              <span className="text-[10px] bg-orange-50 text-orange-700 border border-orange-200 px-1.5 py-0.5 rounded font-medium">
+                {opLabel}{c.value !== undefined ? ` ${c.value}` : ''}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
+  return null;
+}
+
+// ── SectionLabel ──────────────────────────────────────────────────────────────
+
+function SectionLabel({ n, label, required, color = 'blue' }: { n: number; label: string; required?: boolean; color?: 'blue' | 'orange' }) {
+  return (
+    <div className="flex items-center gap-2 mb-3">
+      <span className={`w-5 h-5 rounded-full text-white text-[11px] font-bold flex items-center justify-center shrink-0 ${color === 'orange' ? 'bg-orange-500' : 'bg-blue-600'}`}>
+        {n}
+      </span>
+      <span className="text-sm font-semibold text-slate-800">
+        {label}
+        {required && <span className="text-red-500 ml-0.5">*</span>}
+      </span>
+    </div>
+  );
+}
+
+// ── ConfigModal (Analysis) ────────────────────────────────────────────────────
 
 function ConfigModal({
   node,
@@ -115,11 +250,9 @@ function ConfigModal({
   const toggleSource = (id: string) =>
     setSources((prev) => (prev.includes(id) ? prev.filter((s) => s !== id) : [...prev, id]));
 
-  // Classification categories
   const categories = (outputConfig.categories as string[]) ?? [''];
   const updateCategories = (cats: string[]) => setOutputConfig({ ...outputConfig, categories: cats });
 
-  // Structured fields
   const structuredFields = (outputConfig.fields as { name: string; description: string }[]) ?? [
     { name: '', description: '' },
   ];
@@ -143,23 +276,19 @@ function ConfigModal({
         className="bg-white rounded-2xl shadow-2xl w-155 max-h-[88vh] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
         <div className="px-6 pt-6 pb-4 border-b border-slate-100 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-2.5">
             <span className="w-8 h-8 rounded-lg flex items-center justify-center bg-blue-100 text-blue-600">
               <Bot size={16} />
             </span>
-            <h3 className="text-base font-semibold text-slate-800">Configurer le nœud</h3>
+            <h3 className="text-base font-semibold text-slate-800">Configurer le nœud d'analyse</h3>
           </div>
           <button onClick={onClose} className="p-1 hover:bg-slate-100 rounded-lg">
             <X size={16} className="text-slate-400" />
           </button>
         </div>
 
-        {/* Body */}
         <div className="p-6 space-y-8 overflow-y-auto flex-1">
-
-          {/* ── 1. NOM ── */}
           <section>
             <SectionLabel n={1} label="Nom" required />
             <input
@@ -177,7 +306,6 @@ function ConfigModal({
             </p>
           </section>
 
-          {/* ── 2. INSTRUCTION ── */}
           <section>
             <SectionLabel n={2} label="Instruction" />
             <textarea
@@ -189,7 +317,6 @@ function ConfigModal({
             />
           </section>
 
-          {/* ── 3. SOURCES ── */}
           <section>
             <SectionLabel n={3} label="Sources" />
             {formFields.length === 0 ? (
@@ -208,9 +335,7 @@ function ConfigModal({
                           <label
                             key={f.id}
                             className={`flex items-center gap-2.5 px-3 py-2 rounded-lg border cursor-pointer transition-colors ${
-                              selected
-                                ? 'border-blue-300 bg-blue-50'
-                                : 'border-slate-200 bg-white hover:bg-slate-50'
+                              selected ? 'border-blue-300 bg-blue-50' : 'border-slate-200 bg-white hover:bg-slate-50'
                             }`}
                           >
                             <input
@@ -237,9 +362,7 @@ function ConfigModal({
                           <label
                             key={f.id}
                             className={`flex items-center gap-2.5 px-3 py-2 rounded-lg border cursor-pointer transition-colors ${
-                              selected
-                                ? 'border-amber-300 bg-amber-50'
-                                : 'border-slate-200 bg-white hover:bg-slate-50'
+                              selected ? 'border-amber-300 bg-amber-50' : 'border-slate-200 bg-white hover:bg-slate-50'
                             }`}
                           >
                             <input
@@ -261,10 +384,8 @@ function ConfigModal({
             )}
           </section>
 
-          {/* ── 4. ACTION ── */}
           <section>
             <SectionLabel n={4} label="Action — Format de sortie" />
-            {/* Type selector */}
             <div className="grid grid-cols-5 gap-2 mb-4">
               {OUTPUT_TYPES.map((ot) => (
                 <button
@@ -285,8 +406,6 @@ function ConfigModal({
                 </button>
               ))}
             </div>
-
-            {/* Output type details */}
             {outputType === 'boolean' && (
               <div className="bg-slate-50 rounded-xl p-3 flex items-center gap-3 text-xs text-slate-500">
                 <span className="text-base">✅ ❌</span>
@@ -387,12 +506,8 @@ function ConfigModal({
           </section>
         </div>
 
-        {/* Footer */}
         <div className="px-6 py-4 flex justify-end gap-2 border-t border-slate-100 shrink-0">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 text-sm text-slate-600 hover:bg-slate-50 rounded-lg transition-colors"
-          >
+          <button onClick={onClose} className="px-4 py-2 text-sm text-slate-600 hover:bg-slate-50 rounded-lg transition-colors">
             Annuler
           </button>
           <button
@@ -408,18 +523,200 @@ function ConfigModal({
   );
 }
 
-// ── SectionLabel ──────────────────────────────────────────────────────────────
+// ── BreakConfigModal ──────────────────────────────────────────────────────────
 
-function SectionLabel({ n, label, required }: { n: number; label: string; required?: boolean }) {
+function BreakConfigModal({
+  node,
+  analysisNodes,
+  onSave,
+  onClose,
+}: {
+  node: WorkflowNode;
+  analysisNodes: WorkflowNode[];
+  onSave: (label: string, config: Record<string, unknown>) => void;
+  onClose: () => void;
+}) {
+  const cfg = (node.config as Record<string, unknown>) ?? {};
+  const [name, setName] = useState<string>(node.label ?? '');
+  const [conditions, setConditions] = useState<BreakCondition[]>(
+    (cfg.conditions as BreakCondition[]) ?? []
+  );
+  const [conditionLogic, setConditionLogic] = useState<'AND' | 'OR'>(
+    (cfg.condition_logic as 'AND' | 'OR') ?? 'AND'
+  );
+
+  const canSave = name.trim().length > 0;
+
+  const addCondition = () =>
+    setConditions((prev) => [...prev, { source_node_id: analysisNodes[0]?.id ?? '', operator: 'is_false' }]);
+
+  const removeCondition = (idx: number) =>
+    setConditions((prev) => prev.filter((_, i) => i !== idx));
+
+  const updateCondition = (idx: number, patch: Partial<BreakCondition>) =>
+    setConditions((prev) => prev.map((c, i) => (i === idx ? { ...c, ...patch } : c)));
+
+  const handleSave = () => {
+    if (!canSave) return;
+    onSave(name.trim(), { conditions, condition_logic: conditionLogic });
+    onClose();
+  };
+
   return (
-    <div className="flex items-center gap-2 mb-3">
-      <span className="w-5 h-5 rounded-full bg-blue-600 text-white text-[11px] font-bold flex items-center justify-center shrink-0">
-        {n}
-      </span>
-      <span className="text-sm font-semibold text-slate-800">
-        {label}
-        {required && <span className="text-red-500 ml-0.5">*</span>}
-      </span>
+    <div
+      className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-2xl shadow-2xl w-135 max-h-[88vh] flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="px-6 pt-6 pb-4 border-b border-slate-100 flex items-center justify-between shrink-0">
+          <div className="flex items-center gap-2.5">
+            <span className="w-8 h-8 rounded-lg flex items-center justify-center bg-orange-100 text-orange-600">
+              <Ban size={16} />
+            </span>
+            <h3 className="text-base font-semibold text-slate-800">Configurer la rupture conditionnelle</h3>
+          </div>
+          <button onClick={onClose} className="p-1 hover:bg-slate-100 rounded-lg">
+            <X size={16} className="text-slate-400" />
+          </button>
+        </div>
+
+        <div className="p-6 space-y-6 overflow-y-auto flex-1">
+          <section>
+            <SectionLabel n={1} label="Nom" required color="orange" />
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Ex: Arrêt si CNI invalide…"
+              autoFocus
+              className={`w-full border rounded-xl px-4 py-2.5 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-orange-500 ${
+                !name.trim() ? 'border-red-300 bg-red-50' : 'border-slate-200'
+              }`}
+            />
+          </section>
+
+          <section>
+            <SectionLabel n={2} label="Conditions de rupture" color="orange" />
+            <p className="text-xs text-slate-400 mb-3">
+              Si les conditions sont remplies, le pipeline s'arrête immédiatement et les nœuds suivants ne sont pas exécutés.
+            </p>
+            {analysisNodes.length === 0 && (
+              <div className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-xl p-3 mb-3">
+                Aucun nœud d'analyse disponible. Ajoutez d'abord des nœuds d'analyse avant de définir des conditions.
+              </div>
+            )}
+            {conditions.length === 0 ? (
+              <div className="text-xs text-slate-400 bg-slate-50 rounded-xl p-4 text-center">
+                Aucune condition — le nœud ne déclenchera jamais de rupture.
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {conditions.map((cond, idx) => {
+                  const sourceNode = analysisNodes.find((n) => n.id === cond.source_node_id);
+                  const sourceOutputType = (sourceNode?.config as Record<string, unknown> | undefined)?.output_type as OutputType | undefined;
+                  const availableOps = OPERATORS.filter(
+                    (op) => !sourceOutputType || op.forTypes.includes(sourceOutputType)
+                  );
+                  const selectedOp = OPERATORS.find((o) => o.value === cond.operator);
+                  const isNumber = cond.operator === 'less_than' || cond.operator === 'greater_than';
+
+                  return (
+                    <div key={idx} className="bg-orange-50 border border-orange-200 rounded-xl p-3 space-y-2.5">
+                      {idx > 0 && (
+                        <div className="flex items-center gap-2 -mt-1 mb-1">
+                          <div className="flex-1 h-px bg-orange-200" />
+                          <div className="flex gap-1">
+                            {(['AND', 'OR'] as const).map((l) => (
+                              <button
+                                key={l}
+                                type="button"
+                                onClick={() => setConditionLogic(l)}
+                                className={`px-2.5 py-0.5 text-xs font-bold rounded-full border transition-colors ${
+                                  conditionLogic === l
+                                    ? 'bg-orange-500 text-white border-orange-500'
+                                    : 'bg-white text-orange-600 border-orange-300 hover:bg-orange-100'
+                                }`}
+                              >
+                                {l}
+                              </button>
+                            ))}
+                          </div>
+                          <div className="flex-1 h-px bg-orange-200" />
+                        </div>
+                      )}
+
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-semibold text-orange-600 whitespace-nowrap w-5">Si</span>
+                        <select
+                          value={cond.source_node_id}
+                          onChange={(e) => updateCondition(idx, { source_node_id: e.target.value, operator: 'is_false', value: undefined })}
+                          className="flex-1 border border-orange-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-orange-500 bg-white"
+                        >
+                          <option value="">— Sélectionner un nœud d'analyse —</option>
+                          {analysisNodes.map((n) => (
+                            <option key={n.id} value={n.id}>{n.label || n.id}</option>
+                          ))}
+                        </select>
+                        <button
+                          type="button"
+                          onClick={() => removeCondition(idx)}
+                          className="p-1 text-orange-400 hover:text-red-500 transition-colors shrink-0"
+                        >
+                          <MinusCircle size={16} />
+                        </button>
+                      </div>
+
+                      <div className="flex items-center gap-2 pl-7">
+                        <select
+                          value={cond.operator}
+                          onChange={(e) => updateCondition(idx, { operator: e.target.value, value: undefined })}
+                          className="flex-1 border border-orange-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-orange-500 bg-white"
+                        >
+                          {availableOps.map((op) => (
+                            <option key={op.value} value={op.value}>{op.label}</option>
+                          ))}
+                        </select>
+                        {selectedOp?.needsValue && (
+                          <input
+                            type={isNumber ? 'number' : 'text'}
+                            value={cond.value ?? ''}
+                            onChange={(e) => updateCondition(idx, { value: isNumber ? Number(e.target.value) : e.target.value })}
+                            placeholder={isNumber ? '0' : 'Valeur…'}
+                            className="w-24 border border-orange-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-orange-500 bg-white"
+                          />
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            <button
+              type="button"
+              onClick={addCondition}
+              className="flex items-center gap-1.5 text-xs text-orange-600 hover:text-orange-800 font-medium transition-colors mt-3"
+            >
+              <PlusCircle size={14} /> Ajouter une condition
+            </button>
+          </section>
+        </div>
+
+        <div className="px-6 py-4 flex justify-end gap-2 border-t border-slate-100 shrink-0">
+          <button onClick={onClose} className="px-4 py-2 text-sm text-slate-600 hover:bg-slate-50 rounded-lg transition-colors">
+            Annuler
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={!canSave}
+            className="px-4 py-2 bg-orange-500 text-white text-sm font-medium rounded-lg hover:bg-orange-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            Enregistrer
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -432,12 +729,14 @@ function NodeCard({
   onConfigure,
   onDelete,
   formFields,
+  allNodes,
 }: {
   node: WorkflowNode;
   canDelete: boolean;
   onConfigure: () => void;
   onDelete: () => void;
   formFields: FormBlock[];
+  allNodes: WorkflowNode[];
 }) {
   const colors = nodeColors(node.type);
   const cfg = node.config as Record<string, unknown> | undefined;
@@ -451,7 +750,7 @@ function NodeCard({
           {React.createElement(nodeIcon(node.type), { size: 18 })}
         </div>
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             {node.type === 'trigger' ? (
               <p className="text-sm font-semibold text-slate-800">Déclencheur</p>
             ) : node.label ? (
@@ -464,11 +763,16 @@ function NodeCard({
                 {outputMeta.emoji} {outputMeta.label}
               </span>
             )}
+            {node.type === 'break' && (
+              <span className="text-[10px] font-semibold bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded-full">
+                Rupture conditionnelle
+              </span>
+            )}
           </div>
           {node.type === 'trigger' ? (
             <p className="text-xs text-slate-500 mt-0.5">L'instructeur lance l'analyse manuellement.</p>
           ) : (
-            <NodeSummary node={node} formFields={formFields} />
+            <NodeSummary node={node} formFields={formFields} allNodes={allNodes} />
           )}
         </div>
         <div className="flex items-center gap-1 shrink-0">
@@ -498,9 +802,16 @@ function NodeCard({
 
 // ── Arrow ─────────────────────────────────────────────────────────────────────
 
-function Arrow() {
+function Arrow({ onInsert }: { onInsert?: () => void }) {
+  const [hovered, setHovered] = useState(false);
+
   return (
-    <div className="flex justify-center" style={{ height: '36px' }}>
+    <div
+      className="flex justify-center relative"
+      style={{ height: '36px' }}
+      onMouseEnter={() => onInsert && setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
       <svg width="32" height="36" viewBox="0 0 32 36" fill="none">
         <defs>
           <linearGradient id="arrowGrad" x1="16" y1="0" x2="16" y2="36" gradientUnits="userSpaceOnUse">
@@ -511,6 +822,16 @@ function Arrow() {
         <line x1="16" y1="0" x2="16" y2="26" stroke="url(#arrowGrad)" strokeWidth="1.5" />
         <path d="M9 22 L16 33 L23 22" fill="#64748b" fillOpacity="0.85" />
       </svg>
+      {onInsert && hovered && (
+        <button
+          onMouseDown={(e) => e.stopPropagation()}
+          onClick={(e) => { e.stopPropagation(); onInsert(); }}
+          className="absolute top-1/2 -translate-y-1/2 w-5 h-5 rounded-full bg-white border-2 border-blue-400 text-blue-500 flex items-center justify-center hover:bg-blue-50 hover:border-blue-500 transition-all shadow-sm z-10"
+          title="Insérer un nœud ici"
+        >
+          <Plus size={10} />
+        </button>
+      )}
     </div>
   );
 }
@@ -527,7 +848,10 @@ export function InstructionWorkflowBuilder({
   demandeBlocks: FormBlock[];
 }) {
   const [configuringId, setConfiguringId] = useState<string | null>(null);
-  const [showAddModal, setShowAddModal] = useState(false);
+  const [showAddModal, setShowAddModal] = useState<false | 'analysis' | 'break'>(false);
+  // typePicker: null = closed; afterNodeId = where to insert (null = end, string = after that node id)
+  const [typePicker, setTypePicker] = useState<{ afterNodeId: string | null } | null>(null);
+  const [insertAfterNodeId, setInsertAfterNodeId] = useState<string | null>(null);
 
   // ── Pan / Zoom ──────────────────────────────────────────────────────────────
   const canvasRef = useRef<HTMLDivElement>(null);
@@ -585,21 +909,61 @@ export function InstructionWorkflowBuilder({
   // ── Node operations ─────────────────────────────────────────────────────────
 
   const formFields = collectFormFields(demandeBlocks);
+  const analysisNodes = nodes.filter((n) => n.type === 'analysis');
 
   const handleAddNode = (label: string, config: Record<string, unknown>) => {
+    const nodeType = showAddModal === 'break' ? 'break' : 'analysis';
     const newNode: WorkflowNode = {
       id: `node_${crypto.randomUUID()}`,
-      type: 'analysis',
+      type: nodeType,
       label,
       config,
       next: null,
     };
-    const updatedNodes = [...nodes];
-    if (updatedNodes.length > 0) {
-      const last = updatedNodes[updatedNodes.length - 1];
-      updatedNodes[updatedNodes.length - 1] = { ...last, next: newNode.id };
+
+    const afterId = insertAfterNodeId;
+
+    if (afterId === null) {
+      // Append at end
+      const updated = [...nodes];
+      if (updated.length > 0) {
+        updated[updated.length - 1] = { ...updated[updated.length - 1], next: newNode.id };
+      }
+      setNodes([...updated, newNode]);
+    } else if (afterId === 'trigger_0') {
+      // Insert at beginning (after virtual trigger, before first real node)
+      newNode.next = nodes[0]?.id ?? null;
+      setNodes([newNode, ...nodes]);
+    } else {
+      // Insert after a specific real node
+      const afterIdx = nodes.findIndex((n) => n.id === afterId);
+      if (afterIdx === -1) {
+        setNodes([...nodes, newNode]);
+      } else {
+        newNode.next = (nodes[afterIdx].next as string | null);
+        const updated = nodes.map((n, i) =>
+          i === afterIdx ? { ...n, next: newNode.id } : n
+        );
+        updated.splice(afterIdx + 1, 0, newNode);
+        setNodes(updated);
+      }
     }
-    setNodes([...updatedNodes, newNode]);
+  };
+
+  const openTypePicker = (afterNodeId: string | null) => {
+    setTypePicker({ afterNodeId });
+  };
+
+  const selectType = (type: 'analysis' | 'break') => {
+    if (!typePicker) return;
+    setInsertAfterNodeId(typePicker.afterNodeId);
+    setShowAddModal(type);
+    setTypePicker(null);
+  };
+
+  const closeAddModal = () => {
+    setShowAddModal(false);
+    setInsertAfterNodeId(null);
   };
 
   const deleteNode = (id: string) => {
@@ -652,8 +1016,11 @@ export function InstructionWorkflowBuilder({
                   onConfigure={() => setConfiguringId(node.id)}
                   onDelete={() => deleteNode(node.id)}
                   formFields={formFields}
+                  allNodes={nodes}
                 />
-                {i < displayNodes.length - 1 && <Arrow />}
+                {i < displayNodes.length - 1 && (
+                  <Arrow onInsert={() => openTypePicker(displayNodes[i].id)} />
+                )}
               </div>
             ))}
 
@@ -661,8 +1028,8 @@ export function InstructionWorkflowBuilder({
             <div className="mt-4">
               <Arrow />
               <button
-                onClick={() => setShowAddModal(true)}
-                className="flex items-center gap-2 text-sm text-blue-600 font-medium hover:text-blue-700 px-4 py-2.5 border-2 border-dashed border-blue-200 rounded-xl w-full justify-center hover:border-blue-400 hover:bg-blue-50 transition-all"
+                onClick={() => openTypePicker(null)}
+                className="flex items-center gap-2 text-sm text-slate-500 font-medium hover:text-blue-600 px-4 py-2.5 border-2 border-dashed border-slate-200 rounded-xl w-full justify-center hover:border-blue-300 hover:bg-blue-50/50 transition-all"
               >
                 <Plus size={16} />
                 Ajouter un nœud
@@ -716,21 +1083,48 @@ export function InstructionWorkflowBuilder({
         </div>
       </div>
 
-      {/* Add modal */}
-      {showAddModal && (
+      {/* Type picker popup */}
+      {typePicker !== null && (
+        <TypePicker
+          onSelectAnalysis={() => selectType('analysis')}
+          onSelectBreak={() => selectType('break')}
+          onClose={() => setTypePicker(null)}
+        />
+      )}
+
+      {/* Add analysis modal */}
+      {showAddModal === 'analysis' && (
         <ConfigModal
           node={{ id: 'new', type: 'analysis', label: '', config: defaultAnalysisConfig(), next: null }}
           formFields={formFields}
           onSave={handleAddNode}
-          onClose={() => setShowAddModal(false)}
+          onClose={closeAddModal}
         />
       )}
 
-      {/* Edit modal */}
-      {configuringNode && (
+      {/* Add break modal */}
+      {showAddModal === 'break' && (
+        <BreakConfigModal
+          node={{ id: 'new', type: 'break', label: '', config: defaultBreakConfig(), next: null }}
+          analysisNodes={analysisNodes}
+          onSave={handleAddNode}
+          onClose={closeAddModal}
+        />
+      )}
+
+      {/* Edit modals */}
+      {configuringNode && configuringNode.type === 'analysis' && (
         <ConfigModal
           node={configuringNode}
           formFields={formFields}
+          onSave={(label, config) => { updateNode(configuringNode.id, label, config); }}
+          onClose={() => setConfiguringId(null)}
+        />
+      )}
+      {configuringNode && configuringNode.type === 'break' && (
+        <BreakConfigModal
+          node={configuringNode}
+          analysisNodes={analysisNodes.filter((n) => n.id !== configuringNode.id)}
           onSave={(label, config) => { updateNode(configuringNode.id, label, config); }}
           onClose={() => setConfiguringId(null)}
         />

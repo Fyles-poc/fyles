@@ -242,6 +242,42 @@ async def _run_nodes(
                 entry["output"] = output
                 if output.get("statut") == "error":
                     entry["status"] = "warning"
+                variables[node.id] = output  # Track for break conditions
+                next_id = node.next if isinstance(node.next, str) else None
+
+            elif node.type == "break":
+                # ── Evaluate break conditions ─────────────────────────────────
+                conditions: list[dict] = config.get("conditions", [])
+                condition_logic: str = config.get("condition_logic", "AND")
+                results: list[bool] = []
+                for cond in conditions:
+                    source_id = cond.get("source_node_id", "")
+                    source_output = variables.get(source_id, {})
+                    result_val = source_output.get("result")
+                    operator = cond.get("operator", "")
+                    value = cond.get("value")
+                    if operator == "is_false":
+                        results.append(result_val is False)
+                    elif operator == "is_true":
+                        results.append(result_val is True)
+                    elif operator == "less_than" and isinstance(result_val, (int, float)):
+                        results.append(result_val < float(value or 0))
+                    elif operator == "greater_than" and isinstance(result_val, (int, float)):
+                        results.append(result_val > float(value or 0))
+                    elif operator == "equals":
+                        results.append(str(result_val) == str(value or ""))
+                    elif operator == "not_equals":
+                        results.append(str(result_val) != str(value or ""))
+                    else:
+                        results.append(False)
+                should_break = (any(results) if condition_logic == "OR" else all(results)) if results else False
+                if should_break:
+                    entry["status"] = "break"
+                    entry["output"] = {"message": "Conditions remplies — pipeline interrompu"}
+                    trace.append(entry)
+                    return trace  # Stop the pipeline
+                else:
+                    entry["output"] = {"message": "Conditions non remplies — pipeline continue"}
                 next_id = node.next if isinstance(node.next, str) else None
 
             else:
@@ -293,7 +329,19 @@ async def execute_workflow(workflow_id: str, dossier_reference: str):
     variables: dict = {}
     trace = await _run_nodes(nodes, start.id, dossier, form_fields_map, variables, cfg)
 
-    success = all(e["status"] != "error" for e in trace)
+    # Append nodes that were not reached (stopped by a break or error)
+    executed_ids = {e["node_id"] for e in trace}
+    for n in nodes:
+        if n.id not in executed_ids:
+            trace.append({
+                "node_id": n.id,
+                "type": n.type,
+                "label": n.label,
+                "status": "not_run",
+                "output": {},
+            })
+
+    success = all(e["status"] not in ("error",) for e in trace)
 
     # After execution, move dossier to "En instruction" so the instructor can review
     dossier.statut = DossierStatus.en_instruction
