@@ -646,7 +646,18 @@ export function DossierDetail() {
         <div className="flex-1 flex flex-col overflow-hidden bg-slate-50">
           <div className="bg-white border-b border-slate-200 px-5 py-3 shrink-0 flex items-center justify-between">
             <div>
-              <p className="text-sm font-semibold text-slate-800">Formulaire d'instruction</p>
+              <div className="flex items-center gap-2">
+                <p className="text-sm font-semibold text-slate-800">Formulaire d'instruction</p>
+                {workflow && (
+                  <button
+                    onClick={() => navigate(`/workflows/${workflow.id}`)}
+                    className="flex items-center gap-1 text-xs text-blue-500 hover:text-blue-700 hover:underline transition-colors"
+                  >
+                    <ExternalLink size={11} />
+                    {workflow.nom}
+                  </button>
+                )}
+              </div>
               <p className="text-xs text-slate-500">
                 {nonTriggerNodes.length > 0
                   ? `${qCount} analyse${qCount !== 1 ? 's' : ''}${breakCount > 0 ? ` · ${breakCount} rupture${breakCount !== 1 ? 's' : ''}` : ''}`
