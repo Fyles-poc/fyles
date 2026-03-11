@@ -11,9 +11,8 @@ import {
 import { api } from '../lib/api';
 import { useApi } from '../lib/useApi';
 import { LoadingSpinner, ErrorMessage } from '../components/ui/LoadingSpinner';
-import { StatusBadge } from '../components/ui/Badge';
 import { ConfirmModal } from '../components/ui/ConfirmModal';
-import type { DocumentItem, RecommendationDecision, FormBlock, WorkflowExecutionResult, AIAnalysisResult, AIAnalysisResultOverrides, NodeExecutionEntry, WorkflowNode } from '../lib/api';
+import type { DocumentItem, RecommendationDecision, FormBlock, WorkflowExecutionResult, AIAnalysisResult, AIAnalysisResultOverrides, NodeExecutionEntry, WorkflowNode, DossierStatus } from '../lib/api';
 
 // ── File tree icon ─────────────────────────────────────────────────────────
 
@@ -585,6 +584,7 @@ export function DossierDetail() {
   const [savingResultId, setSavingResultId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [statusUpdating, setStatusUpdating] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pendingDocIdRef = useRef<string | null>(null);
 
@@ -645,6 +645,18 @@ export function DossierDetail() {
   const analysisResultMap = new Map(
     (dossier.analysis_results ?? []).map((r) => [r.id, r])
   );
+
+  const handleStatutChange = async (statut: DossierStatus) => {
+    setStatusUpdating(true);
+    try {
+      await api.patchStatut(dossier!.reference, statut);
+      await refetch();
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setStatusUpdating(false);
+    }
+  };
 
   const handleConfirmDecision = async () => {
     if (!decision) return;
@@ -769,7 +781,25 @@ export function DossierDetail() {
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-base font-bold text-slate-800">{dossier.reference}</h1>
-              <StatusBadge type="dossier" status={dossier.statut} />
+              <select
+                value={dossier.statut}
+                disabled={statusUpdating}
+                onChange={(e) => handleStatutChange(e.target.value as DossierStatus)}
+                onClick={(e) => e.stopPropagation()}
+                className={`text-xs font-medium rounded-full px-2.5 py-0.5 border-0 cursor-pointer focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-blue-400 disabled:opacity-60 ${
+                  dossier.statut === 'boite_reception' ? 'bg-purple-100 text-purple-700' :
+                  dossier.statut === 'en_instruction'  ? 'bg-blue-100 text-blue-700' :
+                  dossier.statut === 'en_attente'      ? 'bg-amber-100 text-amber-700' :
+                  dossier.statut === 'approuve'        ? 'bg-emerald-100 text-emerald-700' :
+                                                         'bg-red-100 text-red-700'
+                }`}
+              >
+                <option value="boite_reception">Boîte de réception</option>
+                <option value="en_instruction">En instruction</option>
+                <option value="en_attente">En attente</option>
+                <option value="approuve">Approuvé</option>
+                <option value="refuse">Refusé</option>
+              </select>
               {hasKO && (
                 <span className="flex items-center gap-1 text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded-full font-semibold">
                   <XCircle size={11} />KO
