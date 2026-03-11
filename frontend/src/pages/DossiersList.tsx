@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Search, Filter, Trash2, ChevronUp, ChevronDown, ChevronsUpDown, X, Loader2, LayoutGrid, List } from 'lucide-react';
+import { Search, Filter, Trash2, ChevronUp, ChevronDown, ChevronsUpDown, X, Loader2, LayoutGrid, List, CalendarDays } from 'lucide-react';
 import { api } from '../lib/api';
 import { useApi } from '../lib/useApi';
 import { LoadingSpinner, ErrorMessage } from '../components/ui/LoadingSpinner';
@@ -32,6 +32,141 @@ function formatDate(iso: string) {
     day: '2-digit', month: '2-digit', year: 'numeric',
     hour: '2-digit', minute: '2-digit',
   });
+}
+
+function toISODate(d: Date) {
+  return d.toISOString().split('T')[0];
+}
+
+function formatDateShort(iso: string) {
+  return new Date(iso).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' });
+}
+
+const DATE_PRESETS = [
+  { label: "Aujourd'hui",       getValue: () => { const d = toISODate(new Date()); return { from: d, to: d }; } },
+  { label: '7 derniers jours',  getValue: () => { const t = new Date(); const f = new Date(t); f.setDate(f.getDate() - 6); return { from: toISODate(f), to: toISODate(t) }; } },
+  { label: '30 derniers jours', getValue: () => { const t = new Date(); const f = new Date(t); f.setDate(f.getDate() - 29); return { from: toISODate(f), to: toISODate(t) }; } },
+  { label: 'Ce mois-ci',        getValue: () => { const t = new Date(); return { from: toISODate(new Date(t.getFullYear(), t.getMonth(), 1)), to: toISODate(t) }; } },
+  { label: '3 derniers mois',   getValue: () => { const t = new Date(); const f = new Date(t); f.setMonth(f.getMonth() - 3); return { from: toISODate(f), to: toISODate(t) }; } },
+];
+
+function DateRangePicker({ dateFrom, dateTo, setDateFrom, setDateTo }: {
+  dateFrom: string; dateTo: string;
+  setDateFrom: (v: string) => void; setDateTo: (v: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function onOutside(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    if (open) document.addEventListener('mousedown', onOutside);
+    return () => document.removeEventListener('mousedown', onOutside);
+  }, [open]);
+
+  const hasDate = dateFrom || dateTo;
+
+  const activePreset = DATE_PRESETS.find((p) => {
+    const v = p.getValue();
+    return v.from === dateFrom && v.to === dateTo;
+  });
+
+  let label = 'Toutes les dates';
+  if (activePreset) {
+    label = activePreset.label;
+  } else if (dateFrom && dateTo) {
+    label = `${formatDateShort(dateFrom)} — ${formatDateShort(dateTo)}`;
+  } else if (dateFrom) {
+    label = `Depuis ${formatDateShort(dateFrom)}`;
+  } else if (dateTo) {
+    label = `Jusqu'au ${formatDateShort(dateTo)}`;
+  }
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className={`flex items-center gap-2 px-3 py-2 text-sm rounded-lg border transition-colors ${
+          hasDate
+            ? 'bg-blue-50 border-blue-300 text-blue-700'
+            : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+        }`}
+      >
+        <CalendarDays size={14} />
+        <span className="max-w-40 truncate">{label}</span>
+        {hasDate ? (
+          <span
+            role="button"
+            onClick={(e) => { e.stopPropagation(); setDateFrom(''); setDateTo(''); }}
+            className="ml-0.5 hover:text-red-500 transition-colors"
+          >
+            <X size={12} />
+          </span>
+        ) : (
+          <ChevronDown size={12} className="opacity-50" />
+        )}
+      </button>
+
+      {open && (
+        <div className="absolute top-full left-0 mt-2 z-30 bg-white border border-slate-200 rounded-xl shadow-lg p-3 w-64">
+          <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2">Période rapide</p>
+          <div className="flex flex-col gap-0.5 mb-3">
+            {DATE_PRESETS.map((preset) => {
+              const v = preset.getValue();
+              const isActive = v.from === dateFrom && v.to === dateTo;
+              return (
+                <button
+                  key={preset.label}
+                  onClick={() => { setDateFrom(v.from); setDateTo(v.to); setOpen(false); }}
+                  className={`text-left px-3 py-1.5 text-sm rounded-lg transition-colors ${
+                    isActive
+                      ? 'bg-blue-600 text-white font-medium'
+                      : 'text-slate-700 hover:bg-slate-100'
+                  }`}
+                >
+                  {preset.label}
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="border-t border-slate-100 pt-3">
+            <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2">Plage personnalisée</p>
+            <div className="space-y-1.5">
+              <div>
+                <label className="text-xs text-slate-500 mb-0.5 block">Du</label>
+                <input
+                  type="date"
+                  value={dateFrom}
+                  onChange={(e) => setDateFrom(e.target.value)}
+                  className="w-full text-sm border border-slate-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-slate-500 mb-0.5 block">Au</label>
+                <input
+                  type="date"
+                  value={dateTo}
+                  min={dateFrom || undefined}
+                  onChange={(e) => setDateTo(e.target.value)}
+                  className="w-full text-sm border border-slate-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            </div>
+            {hasDate && (
+              <button
+                onClick={() => { setDateFrom(''); setDateTo(''); }}
+                className="mt-2 w-full text-xs text-red-500 hover:text-red-700 flex items-center justify-center gap-1"
+              >
+                <X size={11} /> Effacer les dates
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function SortIcon({ col, sortKey, sortDir }: { col: SortKey; sortKey: SortKey | null; sortDir: 'asc' | 'desc' }) {
@@ -128,7 +263,7 @@ export function DossiersList() {
     return list;
   }, [dossiers, workflowFilter, typeFilter, instructeurFilter, dateFrom, dateTo, sortKey, sortDir, workflowNames]);
 
-  const activeFilterCount = [workflowFilter, typeFilter, instructeurFilter, dateFrom, dateTo].filter(Boolean).length;
+  const activeFilterCount = [workflowFilter, typeFilter, instructeurFilter].filter(Boolean).length;
 
   function toggleSort(key: SortKey) {
     if (sortKey === key) {
@@ -227,6 +362,9 @@ export function DossiersList() {
           ))}
         </div>
 
+        {/* Date range picker */}
+        <DateRangePicker dateFrom={dateFrom} dateTo={dateTo} setDateFrom={setDateFrom} setDateTo={setDateTo} />
+
         {/* Filter button + panel */}
         <div className="relative" ref={filterPanelRef}>
           <button
@@ -302,25 +440,6 @@ export function DossiersList() {
                 </select>
               </div>
 
-              {/* Date range */}
-              <div>
-                <label className="block text-xs text-slate-500 mb-1">Dernière MàJ — du</label>
-                <input
-                  type="date"
-                  value={dateFrom}
-                  onChange={(e) => setDateFrom(e.target.value)}
-                  className="w-full text-sm border border-slate-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-slate-500 mb-1">au</label>
-                <input
-                  type="date"
-                  value={dateTo}
-                  onChange={(e) => setDateTo(e.target.value)}
-                  className="w-full text-sm border border-slate-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
             </div>
           )}
         </div>
@@ -345,18 +464,6 @@ export function DossiersList() {
             <span className="flex items-center gap-1 px-2 py-1 bg-blue-50 text-blue-700 text-xs rounded-full border border-blue-200">
               Instructeur: {instructeurFilter}
               <button onClick={() => setInstructeurFilter('')}><X size={10} /></button>
-            </span>
-          )}
-          {dateFrom && (
-            <span className="flex items-center gap-1 px-2 py-1 bg-blue-50 text-blue-700 text-xs rounded-full border border-blue-200">
-              Depuis: {dateFrom}
-              <button onClick={() => setDateFrom('')}><X size={10} /></button>
-            </span>
-          )}
-          {dateTo && (
-            <span className="flex items-center gap-1 px-2 py-1 bg-blue-50 text-blue-700 text-xs rounded-full border border-blue-200">
-              Jusqu'au: {dateTo}
-              <button onClick={() => setDateTo('')}><X size={10} /></button>
             </span>
           )}
         </div>
