@@ -94,7 +94,7 @@ function DateRangePicker({ dateFrom, dateTo, setDateFrom, setDateTo }: {
         }`}
       >
         <CalendarDays size={14} />
-        <span className="max-w-[160px] truncate">{label}</span>
+        <span className="max-w-40 truncate">{label}</span>
         {hasDate ? (
           <span
             role="button"
