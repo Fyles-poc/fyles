@@ -1,12 +1,20 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Search, Filter, Trash2, ChevronUp, ChevronDown, ChevronsUpDown, X, Loader2 } from 'lucide-react';
+import { Search, Filter, Trash2, ChevronUp, ChevronDown, ChevronsUpDown, X, Loader2, LayoutGrid, List } from 'lucide-react';
 import { api } from '../lib/api';
 import { useApi } from '../lib/useApi';
 import { LoadingSpinner, ErrorMessage } from '../components/ui/LoadingSpinner';
 import { StatusBadge } from '../components/ui/Badge';
 import { ConfirmModal } from '../components/ui/ConfirmModal';
 import type { DossierStatus } from '../lib/api';
+
+const KANBAN_COLUMNS: { status: DossierStatus; label: string; border: string; header: string; dot: string }[] = [
+  { status: 'boite_reception', label: 'Boîte de réception', border: 'border-purple-200', header: 'bg-purple-50',  dot: 'bg-purple-400' },
+  { status: 'en_instruction',  label: 'En instruction',    border: 'border-blue-200',   header: 'bg-blue-50',    dot: 'bg-blue-400' },
+  { status: 'en_attente',      label: 'En attente',        border: 'border-amber-200',  header: 'bg-amber-50',   dot: 'bg-amber-400' },
+  { status: 'approuve',        label: 'Approuvé',          border: 'border-emerald-200',header: 'bg-emerald-50', dot: 'bg-emerald-400' },
+  { status: 'refuse',          label: 'Refusé',            border: 'border-red-200',    header: 'bg-red-50',     dot: 'bg-red-400' },
+];
 
 const statusFilters: { value: DossierStatus | 'tous'; label: string }[] = [
   { value: 'tous', label: 'Tous' },
@@ -38,6 +46,9 @@ export function DossiersList() {
   const [searchParams] = useSearchParams();
   const defaultStatus = (searchParams.get('statut') ?? 'tous') as DossierStatus | 'tous';
 
+  const [view, setView] = useState<'list' | 'kanban'>('list');
+  const [draggingRef, setDraggingRef] = useState<string | null>(null);
+  const [dragOverCol, setDragOverCol] = useState<DossierStatus | null>(null);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<DossierStatus | 'tous'>(defaultStatus);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -163,15 +174,33 @@ export function DossiersList() {
   return (
     <div className="p-6 space-y-5">
       {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold text-slate-800">Dossiers</h1>
-        <p className="text-slate-500 text-sm mt-0.5">
-          {dossiers
-            ? filteredSorted.length < dossiers.length
-              ? `${filteredSorted.length} sur ${dossiers.length} dossier(s)`
-              : `${dossiers.length} dossier(s) trouvé(s)`
-            : 'Chargement...'}
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-800">Dossiers</h1>
+          <p className="text-slate-500 text-sm mt-0.5">
+            {dossiers
+              ? filteredSorted.length < dossiers.length
+                ? `${filteredSorted.length} sur ${dossiers.length} dossier(s)`
+                : `${dossiers.length} dossier(s) trouvé(s)`
+              : 'Chargement...'}
+          </p>
+        </div>
+        <div className="flex items-center border border-slate-200 rounded-lg overflow-hidden">
+          <button
+            onClick={() => setView('list')}
+            className={`flex items-center gap-1.5 px-3 py-2 text-sm transition-colors ${view === 'list' ? 'bg-slate-100 text-slate-800 font-medium' : 'text-slate-500 hover:bg-slate-50'}`}
+          >
+            <List size={15} />
+            Liste
+          </button>
+          <button
+            onClick={() => setView('kanban')}
+            className={`flex items-center gap-1.5 px-3 py-2 text-sm transition-colors ${view === 'kanban' ? 'bg-slate-100 text-slate-800 font-medium' : 'text-slate-500 hover:bg-slate-50'}`}
+          >
+            <LayoutGrid size={15} />
+            Kanban
+          </button>
+        </div>
       </div>
 
       {/* Filters bar */}
@@ -334,78 +363,142 @@ export function DossiersList() {
       )}
 
       {/* Table */}
-      <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-        {loading ? (
-          <LoadingSpinner label="Chargement des dossiers..." />
-        ) : error ? (
-          <ErrorMessage message={error} />
-        ) : (
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-slate-100 bg-slate-50">
-                {columns.map((col) => (
-                  <th
-                    key={col.key}
-                    onClick={() => toggleSort(col.key)}
-                    className="text-left px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide cursor-pointer hover:text-slate-700 select-none"
-                  >
-                    {col.label}
-                    <SortIcon col={col.key} sortKey={sortKey} sortDir={sortDir} />
-                  </th>
-                ))}
-                <th className="px-5 py-3" />
-              </tr>
-            </thead>
-            <tbody>
-              {filteredSorted.length === 0 ? (
-                <tr>
-                  <td colSpan={7} className="px-5 py-10 text-center text-slate-400 text-sm">
-                    Aucun dossier trouvé
-                  </td>
-                </tr>
-              ) : (
-                filteredSorted.map((d) => (
-                  <tr key={d.id}
-                    className="border-b border-slate-50 hover:bg-blue-50/40 cursor-pointer transition-colors group"
-                    onClick={() => navigate(`/dossiers/${d.reference}`)}>
-                    <td className="px-5 py-4">
-                      <span className="font-semibold text-blue-600">{d.reference}</span>
-                    </td>
-                    <td className="px-5 py-4 text-slate-700 text-xs font-medium">
-                      {workflowNames[d.workflow_id] ?? <span className="text-slate-300">—</span>}
-                    </td>
-                    <td className="px-5 py-4 text-slate-600">{d.type}</td>
-                    <td className="px-5 py-4"><StatusBadge type="dossier" status={d.statut} /></td>
-                    <td className="px-5 py-4 text-slate-500 text-xs">{formatDate(d.derniere_maj)}</td>
-                    <td className="px-5 py-4 text-slate-500">{d.instructeur ?? <span className="text-slate-300">—</span>}</td>
-                    <td className="px-5 py-4" onClick={(e) => e.stopPropagation()}>
-                      <button
-                        onClick={(e) => { e.stopPropagation(); setConfirmRef(d.reference); }}
-                        disabled={deletingId === d.reference}
-                        title="Supprimer le dossier"
-                        className="p-1.5 rounded-lg text-slate-300 hover:text-red-500 hover:bg-red-50 transition-colors disabled:opacity-40"
+      {view === 'list' && (
+        <>
+          <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+            {loading ? (
+              <LoadingSpinner label="Chargement des dossiers..." />
+            ) : error ? (
+              <ErrorMessage message={error} />
+            ) : (
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-slate-100 bg-slate-50">
+                    {columns.map((col) => (
+                      <th
+                        key={col.key}
+                        onClick={() => toggleSort(col.key)}
+                        className="text-left px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide cursor-pointer hover:text-slate-700 select-none"
                       >
-                        {deletingId === d.reference
-                          ? <Loader2 size={15} className="animate-spin" />
-                          : <Trash2 size={15} />}
-                      </button>
-                    </td>
+                        {col.label}
+                        <SortIcon col={col.key} sortKey={sortKey} sortDir={sortDir} />
+                      </th>
+                    ))}
+                    <th className="px-5 py-3" />
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        )}
-      </div>
+                </thead>
+                <tbody>
+                  {filteredSorted.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="px-5 py-10 text-center text-slate-400 text-sm">
+                        Aucun dossier trouvé
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredSorted.map((d) => (
+                      <tr key={d.id}
+                        className="border-b border-slate-50 hover:bg-blue-50/40 cursor-pointer transition-colors group"
+                        onClick={() => navigate(`/dossiers/${d.reference}`)}>
+                        <td className="px-5 py-4">
+                          <span className="font-semibold text-blue-600">{d.reference}</span>
+                        </td>
+                        <td className="px-5 py-4 text-slate-700 text-xs font-medium">
+                          {workflowNames[d.workflow_id] ?? <span className="text-slate-300">—</span>}
+                        </td>
+                        <td className="px-5 py-4 text-slate-600">{d.type}</td>
+                        <td className="px-5 py-4"><StatusBadge type="dossier" status={d.statut} /></td>
+                        <td className="px-5 py-4 text-slate-500 text-xs">{formatDate(d.derniere_maj)}</td>
+                        <td className="px-5 py-4 text-slate-500">{d.instructeur ?? <span className="text-slate-300">—</span>}</td>
+                        <td className="px-5 py-4" onClick={(e) => e.stopPropagation()}>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setConfirmRef(d.reference); }}
+                            disabled={deletingId === d.reference}
+                            title="Supprimer le dossier"
+                            className="p-1.5 rounded-lg text-slate-300 hover:text-red-500 hover:bg-red-50 transition-colors disabled:opacity-40"
+                          >
+                            {deletingId === d.reference
+                              ? <Loader2 size={15} className="animate-spin" />
+                              : <Trash2 size={15} />}
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            )}
+          </div>
 
-      <div className="flex items-center justify-between text-sm text-slate-500">
-        <span>Affichage de {filteredSorted.length} dossier(s)</span>
-        <div className="flex items-center gap-1">
-          <button className="px-3 py-1.5 border border-slate-200 rounded-lg hover:bg-slate-50 text-xs disabled:opacity-40" disabled>Précédent</button>
-          <button className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs">1</button>
-          <button className="px-3 py-1.5 border border-slate-200 rounded-lg hover:bg-slate-50 text-xs disabled:opacity-40" disabled>Suivant</button>
+          <div className="flex items-center justify-between text-sm text-slate-500">
+            <span>Affichage de {filteredSorted.length} dossier(s)</span>
+            <div className="flex items-center gap-1">
+              <button className="px-3 py-1.5 border border-slate-200 rounded-lg hover:bg-slate-50 text-xs disabled:opacity-40" disabled>Précédent</button>
+              <button className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs">1</button>
+              <button className="px-3 py-1.5 border border-slate-200 rounded-lg hover:bg-slate-50 text-xs disabled:opacity-40" disabled>Suivant</button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Kanban */}
+      {view === 'kanban' && (
+        <div className="grid grid-cols-5 gap-3" style={{ height: 'calc(100vh - 280px)' }}>
+          {KANBAN_COLUMNS.map((col) => {
+            const cards = filteredSorted.filter((d) => d.statut === col.status);
+            const isOver = dragOverCol === col.status;
+            return (
+              <div
+                key={col.status}
+                className={`rounded-xl border flex flex-col overflow-hidden transition-colors ${isOver ? 'border-blue-400 bg-blue-50/40' : col.border}`}
+                onDragOver={(e) => { e.preventDefault(); setDragOverCol(col.status); }}
+                onDragLeave={() => setDragOverCol(null)}
+                onDrop={async (e) => {
+                  e.preventDefault();
+                  setDragOverCol(null);
+                  const ref = e.dataTransfer.getData('text/plain');
+                  const card = filteredSorted.find((d) => d.reference === ref);
+                  if (!ref || !card || card.statut === col.status) return;
+                  setDraggingRef(null);
+                  try {
+                    await api.patchStatut(ref, col.status);
+                    await refetch();
+                  } catch (err) { console.error(err); }
+                }}
+              >
+                <div className={`flex items-center gap-2 px-3 py-2.5 shrink-0 ${col.header} border-b ${col.border}`}>
+                  <span className={`w-2 h-2 rounded-full shrink-0 ${col.dot}`} />
+                  <span className="text-xs font-semibold text-slate-700 truncate">{col.label}</span>
+                  <span className="ml-auto text-xs text-slate-400 font-medium">{cards.length}</span>
+                </div>
+                <div className="flex flex-col gap-2 p-2 overflow-y-auto flex-1">
+                  {cards.map((d) => (
+                    <div
+                      key={d.id}
+                      draggable
+                      onDragStart={(e) => { e.dataTransfer.setData('text/plain', d.reference); setDraggingRef(d.reference); }}
+                      onDragEnd={() => setDraggingRef(null)}
+                      onClick={() => navigate(`/dossiers/${d.reference}`)}
+                      className={`bg-white rounded-lg border border-slate-200 px-3 py-2.5 cursor-grab active:cursor-grabbing hover:border-blue-300 hover:shadow-sm transition-all shrink-0 ${draggingRef === d.reference ? 'opacity-40' : ''}`}
+                    >
+                      <p className="text-xs font-semibold text-blue-600">{d.reference}</p>
+                      <p className="text-xs text-slate-700 mt-0.5">{d.type}</p>
+                      {workflowNames[d.workflow_id] && (
+                        <p className="text-xs text-slate-400 mt-1 truncate">{workflowNames[d.workflow_id]}</p>
+                      )}
+                      {d.instructeur && (
+                        <p className="text-xs text-slate-400 mt-1 truncate">↳ {d.instructeur}</p>
+                      )}
+                    </div>
+                  ))}
+                  {cards.length === 0 && (
+                    <p className="text-xs text-slate-300 text-center mt-4">Aucun dossier</p>
+                  )}
+                </div>
+              </div>
+            );
+          })}
         </div>
-      </div>
+      )}
 
       {confirmRef && (
         <ConfirmModal

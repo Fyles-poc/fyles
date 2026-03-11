@@ -75,6 +75,21 @@ async def get_document_content(
     )
 
 
+class StatutPayload(BaseModel):
+    statut: DossierStatus
+
+
+@router.patch("/{reference}/statut", response_model=Dossier)
+async def patch_statut(reference: str, payload: StatutPayload):
+    dossier = await Dossier.find_one(Dossier.reference == reference)
+    if not dossier:
+        raise HTTPException(status_code=404, detail=f"Dossier {reference} introuvable")
+    dossier.statut = payload.statut
+    dossier.derniere_maj = datetime.utcnow()
+    await dossier.save()
+    return dossier
+
+
 @router.patch("/{reference}/decision", response_model=Dossier)
 async def patch_decision(reference: str, payload: DecisionPayload):
     dossier = await Dossier.find_one(Dossier.reference == reference)

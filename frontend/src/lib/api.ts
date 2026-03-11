@@ -184,6 +184,12 @@ export const api = {
   },
   getDossier: (reference: string) =>
     request<Dossier>(`/dossiers/${reference}`),
+  patchStatut: (reference: string, statut: DossierStatus) =>
+    request<Dossier>(`/dossiers/${reference}/statut`, {
+      method: 'PATCH',
+      body: JSON.stringify({ statut }),
+    }),
+
   patchDecision: (
     reference: string,
     payload: { decision: RecommendationDecision; commentaire?: string; instructeur?: string }
