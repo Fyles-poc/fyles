@@ -4,10 +4,12 @@ from datetime import datetime
 from typing import Any
 
 import anthropic
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 
 from api.config import get_settings
+from api.auth import get_current_user
 from api.models.dossier import Dossier, DossierStatus, AIAnalysisResult
+from api.models.user import User
 from api.models.workflow import Workflow
 from api.storage import get_minio_client
 
@@ -207,7 +209,7 @@ async def _run_nodes(
     dossier: Dossier,
     form_fields_map: dict[str, dict],
     variables: dict,
-    cfg: Any,
+    api_key: str,
 ) -> list[dict]:
     node_map = {n.id: n for n in nodes}
     trace: list[dict] = []
@@ -236,9 +238,9 @@ async def _run_nodes(
                 next_id = node.next if isinstance(node.next, str) else None
 
             elif node.type == "analysis":
-                if not cfg.anthropic_api_key:
-                    raise ValueError("ANTHROPIC_API_KEY non configurée dans les paramètres serveur.")
-                output = await _run_analysis_node(node, config, dossier, form_fields_map, cfg.anthropic_api_key)
+                if not api_key:
+                    raise ValueError("Clé API Anthropic non configurée. Renseignez-la dans Paramètres > Configuration IA.")
+                output = await _run_analysis_node(node, config, dossier, form_fields_map, api_key)
                 entry["output"] = output
                 if output.get("statut") == "error":
                     entry["status"] = "warning"
@@ -299,8 +301,14 @@ async def _run_nodes(
 # ── Endpoint ──────────────────────────────────────────────────────────────────
 
 @router.post("/{workflow_id}/execute/{dossier_reference}")
-async def execute_workflow(workflow_id: str, dossier_reference: str):
+async def execute_workflow(
+    workflow_id: str,
+    dossier_reference: str,
+    current_user: User = Depends(get_current_user),
+):
     cfg = get_settings()
+    # Clé du user en priorité, sinon la clé globale du serveur
+    api_key = current_user.anthropic_api_key or cfg.anthropic_api_key
 
     workflow = await Workflow.get(workflow_id)
     if not workflow:
@@ -327,7 +335,7 @@ async def execute_workflow(workflow_id: str, dossier_reference: str):
 
     start = next((n for n in nodes if n.type == "trigger"), nodes[0])
     variables: dict = {}
-    trace = await _run_nodes(nodes, start.id, dossier, form_fields_map, variables, cfg)
+    trace = await _run_nodes(nodes, start.id, dossier, form_fields_map, variables, api_key)
 
     # Append nodes that were not reached (stopped by a break or error)
     executed_ids = {e["node_id"] for e in trace}
@@ -352,8 +360,14 @@ async def execute_workflow(workflow_id: str, dossier_reference: str):
 
 
 @router.post("/{workflow_id}/execute/{dossier_reference}/node/{node_id}")
-async def execute_single_node(workflow_id: str, dossier_reference: str, node_id: str):
+async def execute_single_node(
+    workflow_id: str,
+    dossier_reference: str,
+    node_id: str,
+    current_user: User = Depends(get_current_user),
+):
     cfg = get_settings()
+    api_key = current_user.anthropic_api_key or cfg.anthropic_api_key
 
     workflow = await Workflow.get(workflow_id)
     if not workflow:
@@ -370,8 +384,8 @@ async def execute_single_node(workflow_id: str, dossier_reference: str, node_id:
     if node.type != "analysis":
         raise HTTPException(status_code=400, detail="Seuls les nœuds d'analyse peuvent être exécutés individuellement")
 
-    if not cfg.anthropic_api_key:
-        raise HTTPException(status_code=500, detail="ANTHROPIC_API_KEY non configurée dans les paramètres serveur")
+    if not api_key:
+        raise HTTPException(status_code=400, detail="Clé API Anthropic non configurée. Renseignez-la dans Paramètres > Configuration IA.")
 
     all_blocks: list = []
     for page in workflow.formulaire_demande:
@@ -380,7 +394,7 @@ async def execute_single_node(workflow_id: str, dossier_reference: str, node_id:
     form_fields_map = _collect_form_fields(all_blocks)
 
     try:
-        output = await _run_analysis_node(node, node.config or {}, dossier, form_fields_map, cfg.anthropic_api_key)
+        output = await _run_analysis_node(node, node.config or {}, dossier, form_fields_map, api_key)
         return {"success": True, "node_id": node_id, "output": output}
     except Exception as exc:
         return {"success": False, "node_id": node_id, "error": str(exc), "output": {}}

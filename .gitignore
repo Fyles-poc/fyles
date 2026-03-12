@@ -24,6 +24,9 @@ Thumbs.db
 # Docker volumes
 mongodb_data/
 
+# Secrets de production (ne jamais committer)
+.env.prod
+
 # IDE
 .vscode/
 .idea/

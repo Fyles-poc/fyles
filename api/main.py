@@ -5,11 +5,13 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from beanie import init_beanie
 
 from api.config import get_settings
+from api.auth import AuthMiddleware
 from api.models.dossier import Dossier
 from api.models.workflow import Workflow
 from api.models.user import User
 from api.models.organization import Organization
 from api.routers import dossiers, workflows, settings, dashboard, workflow_execution
+from api.routers import auth
 
 
 @asynccontextmanager
@@ -31,14 +33,20 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+cfg = get_settings()
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:5174", "http://localhost:4173"],
+    allow_origins=[o.strip() for o in cfg.cors_origins.split(",")],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+# Le middleware auth doit être ajouté APRÈS CORS
+app.add_middleware(AuthMiddleware)
+
+app.include_router(auth.router, prefix="/api")
 app.include_router(dossiers.router, prefix="/api")
 app.include_router(workflows.router, prefix="/api")
 app.include_router(settings.router, prefix="/api")

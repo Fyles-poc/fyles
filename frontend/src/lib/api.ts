@@ -1,11 +1,32 @@
-const BASE = 'http://localhost:8000/api';
+import { getToken, clearAuth } from './auth';
+
+// URL configurable au runtime (injectée par Docker via window.__ENV__)
+// ou via variable Vite en dev, avec fallback sur localhost
+function getApiBase(): string {
+  const w = window as Window & { __ENV__?: { API_URL?: string } };
+  if (w.__ENV__?.API_URL) return `${w.__ENV__.API_URL}/api`;
+  if (import.meta.env.VITE_API_URL) return `${import.meta.env.VITE_API_URL}/api`;
+  return 'http://localhost:8000/api';
+}
+
+const BASE = getApiBase();
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
+  const token = getToken();
   const res = await fetch(`${BASE}${path}`, {
     cache: 'no-store',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...options?.headers,
+    },
     ...options,
   });
+  if (res.status === 401) {
+    clearAuth();
+    window.location.href = '/login';
+    throw new Error('Session expirée');
+  }
   if (!res.ok) {
     const detail = await res.json().catch(() => ({}));
     throw new Error(detail?.detail ?? `Erreur ${res.status}`);
@@ -204,15 +225,28 @@ export const api = {
   replaceDossierDocument: (reference: string, docId: string, file: File) => {
     const fd = new FormData();
     fd.append('file', file);
-    return fetch(`${BASE}/dossiers/${reference}/documents/${docId}`, { cache: 'no-store', method: 'PUT', body: fd }).then(async (r) => {
+    const token = getToken();
+    return fetch(`${BASE}/dossiers/${reference}/documents/${docId}`, {
+      cache: 'no-store',
+      method: 'PUT',
+      body: fd,
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    }).then(async (r) => {
+      if (r.status === 401) { clearAuth(); window.location.href = '/login'; throw new Error('Session expirée'); }
       if (!r.ok) { const t = await r.text(); throw new Error(t); }
       return r.json() as Promise<Dossier>;
     });
   },
 
-  // Documents
-  getDocumentContentUrl: (reference: string, docId: string, download = false) =>
-    `${BASE}/dossiers/${reference}/documents/${docId}/content${download ? '?download=true' : ''}`,
+  // Documents — le token est passé en query param pour les URLs directes (download, viewer)
+  getDocumentContentUrl: (reference: string, docId: string, download = false) => {
+    const params = new URLSearchParams();
+    if (download) params.set('download', 'true');
+    const token = getToken();
+    if (token) params.set('token', token);
+    const qs = params.toString();
+    return `${BASE}/dossiers/${reference}/documents/${docId}/content${qs ? `?${qs}` : ''}`;
+  },
 
   // Workflows
   getWorkflows: () => request<Workflow[]>('/workflows'),
@@ -239,12 +273,16 @@ export const api = {
     body: JSON.stringify(payload),
   }),
 
-  // Dossier submit (multipart)
+  // Dossier submit (multipart) — endpoint PUBLIC, pas de token nécessaire
   submitDossier: (formData: FormData) =>
     fetch(`${BASE}/dossiers/submit`, { method: 'POST', body: formData }).then(async (r) => {
       if (!r.ok) { const t = await r.text(); throw new Error(t); }
       return r.json() as Promise<{ reference: string; id: string }>;
     }),
+
+  // Profil courant
+  getMe: () => request<{ id: string; nom: string; prenom: string; email: string; role: string; has_api_key: boolean }>('/settings/me'),
+  saveApiKey: (api_key: string) => request<void>('/settings/me/api-key', { method: 'PATCH', body: JSON.stringify({ api_key }) }),
 
   // Settings
   getOrganization: () => request<Organization>('/settings/organization'),
