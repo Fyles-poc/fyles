@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Layout } from './components/layout/Layout';
 import { Dashboard } from './pages/Dashboard';
 import { DossiersList } from './pages/DossiersList';
@@ -9,15 +9,26 @@ import { Documents } from './pages/Documents';
 import { AIEngine } from './pages/AIEngine';
 import { Settings } from './pages/Settings';
 import { FormPreview } from './pages/FormPreview';
+import { Login } from './pages/Login';
+import { isAuthenticated } from './lib/auth';
+
+function ProtectedLayout() {
+  if (!isAuthenticated()) return <Navigate to="/login" replace />;
+  return <Layout />;
+}
 
 export default function App() {
   return (
     <BrowserRouter>
       <Routes>
+        {/* Page de connexion */}
+        <Route path="/login" element={<Login />} />
+
         {/* Page publique standalone — hors navigation */}
         <Route path="/forms/:workflowId" element={<FormPreview />} />
 
-        <Route element={<Layout />}>
+        {/* Routes protégées */}
+        <Route element={<ProtectedLayout />}>
           <Route path="/" element={<Dashboard />} />
           <Route path="/dossiers" element={<DossiersList />} />
           <Route path="/dossiers/:reference" element={<DossierDetail />} />

@@ -17,6 +17,8 @@ class User(Document):
     email: str
     role: UserRole = UserRole.instructeur
     actif: bool = True
+    hashed_password: Optional[str] = None
+    anthropic_api_key: Optional[str] = None
 
     class Settings:
         name = "users"

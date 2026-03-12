@@ -1,0 +1,103 @@
+services:
+
+  # ── Frontend (React buildé, servi par Nginx) ──────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    environment:
+      # URL vue depuis le navigateur du client (l'IP publique du VPS)
+      API_URL: "http://${SERVER_IP}"
+    networks:
+      - internal
+    depends_on:
+      - api
+    restart: unless-stopped
+
+  # ── API (FastAPI / uvicorn) ───────────────────────────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: api/Dockerfile
+    environment:
+      MONGODB_URL: "mongodb://mongodb:27017"
+      MONGODB_DB: "fyles"
+      MINIO_ENDPOINT: "minio:9000"
+      MINIO_ACCESS_KEY: "${MINIO_ACCESS_KEY}"
+      MINIO_SECRET_KEY: "${MINIO_SECRET_KEY}"
+      MINIO_BUCKET: "fyles"
+      MINIO_SECURE: "false"
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY}"
+      JWT_SECRET: "${JWT_SECRET}"
+      JWT_EXPIRE_MINUTES: "10080"
+      # Origines autorisées = l'IP publique du VPS
+      CORS_ORIGINS: "http://${SERVER_IP}"
+    networks:
+      - internal
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ── MongoDB ───────────────────────────────────────────────────────────────
+  mongodb:
+    image: mongo:7
+    volumes:
+      - mongodb_data:/data/db
+    environment:
+      MONGO_INITDB_DATABASE: fyles
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ── MinIO (stockage fichiers) ─────────────────────────────────────────────
+  minio:
+    image: minio/minio
+    volumes:
+      - minio_data:/data
+    environment:
+      MINIO_ROOT_USER: "${MINIO_ACCESS_KEY}"
+      MINIO_ROOT_PASSWORD: "${MINIO_SECRET_KEY}"
+    command: server /data --console-address ":9001"
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9000/minio/health/live || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ── Caddy (reverse proxy, seul service exposé) ────────────────────────────
+  caddy:
+    image: caddy:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - internal
+    depends_on:
+      - frontend
+      - api
+    restart: unless-stopped
+
+networks:
+  internal:
+    driver: bridge
+
+volumes:
+  mongodb_data:
+  minio_data:
+  caddy_data:
+  caddy_config:

@@ -1,11 +1,13 @@
-import { NavLink } from 'react-router-dom';
+import { NavLink, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard,
   FolderOpen,
   GitBranch,
   Settings,
   Zap,
+  LogOut,
 } from 'lucide-react';
+import { clearAuth, getUser } from '../../lib/auth';
 
 const navItems = [
   { to: '/', icon: LayoutDashboard, label: 'Tableau de bord', end: true },
@@ -14,6 +16,18 @@ const navItems = [
 ];
 
 export function Sidebar() {
+  const navigate = useNavigate();
+  const user = getUser();
+
+  const initials = user
+    ? `${user.prenom[0] ?? ''}${user.nom[0] ?? ''}`.toUpperCase()
+    : '??';
+
+  function handleLogout() {
+    clearAuth();
+    navigate('/login');
+  }
+
   return (
     <aside className="w-60 min-h-screen bg-slate-900 flex flex-col">
       {/* Logo */}
@@ -62,12 +76,21 @@ export function Sidebar() {
         </NavLink>
         <div className="flex items-center gap-3 px-3 py-2.5 mt-2">
           <div className="w-7 h-7 rounded-full bg-blue-500 flex items-center justify-center text-white text-xs font-bold">
-            MD
+            {initials}
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-white text-xs font-medium truncate">Marc Dupont</p>
-            <p className="text-slate-500 text-xs truncate">Instructeur</p>
+            <p className="text-white text-xs font-medium truncate">
+              {user ? `${user.prenom} ${user.nom}` : '—'}
+            </p>
+            <p className="text-slate-500 text-xs truncate capitalize">{user?.role ?? ''}</p>
           </div>
+          <button
+            onClick={handleLogout}
+            title="Se déconnecter"
+            className="text-slate-500 hover:text-red-400 transition-colors shrink-0"
+          >
+            <LogOut size={15} />
+          </button>
         </div>
       </div>
     </aside>

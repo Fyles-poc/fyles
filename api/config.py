@@ -14,6 +14,12 @@ class Settings(BaseSettings):
 
     anthropic_api_key: str = ""
 
+    jwt_secret: str = "changeme-use-a-strong-random-secret-in-production"
+    jwt_expire_minutes: int = 60 * 24 * 7  # 7 jours
+
+    # Origines CORS autorisées (séparées par des virgules)
+    cors_origins: str = "http://localhost:5173,http://localhost:5174,http://localhost:4173"
+
     model_config = {"env_file": ".env", "extra": "ignore"}
 
 

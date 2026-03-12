@@ -56,9 +56,12 @@ const logTypeLabels: Record<string, string> = {
 export function Settings() {
   const [activeSection, setActiveSection] = useState<SettingsSection>('organisation');
   const [saved, setSaved] = useState(false);
+  const [apiKey, setApiKey] = useState('');
+  const [apiKeySaved, setApiKeySaved] = useState(false);
 
   const { data: orgData, loading: orgLoading } = useApi(() => api.getOrganization());
   const { data: usersData, loading: usersLoading, refetch: refetchUsers } = useApi(() => api.getUsers());
+  const { data: meData } = useApi(() => api.getMe());
 
   const [org, setOrg] = useState<Omit<Organization, 'id'>>({
     nom: '', siret: '', adresse: '', email: '', telephone: '',
@@ -74,6 +77,17 @@ export function Settings() {
       await api.updateOrganization(org);
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleSaveApiKey = async () => {
+    try {
+      await api.saveApiKey(apiKey);
+      setApiKeySaved(true);
+      setApiKey('');
+      setTimeout(() => setApiKeySaved(false), 2000);
     } catch (e) {
       console.error(e);
     }
@@ -256,10 +270,16 @@ export function Settings() {
                 <label className="block text-xs font-semibold text-slate-600">Clé API Anthropic</label>
                 <input
                   type="password"
-                  placeholder="sk-ant-..."
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                  placeholder={meData?.has_api_key ? '••••••••••••••••••••• (clé enregistrée)' : 'sk-ant-...'}
                   className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono"
                 />
-                <p className="text-xs text-slate-400">Stockée de manière sécurisée et chiffrée.</p>
+                <p className="text-xs text-slate-400">
+                  {meData?.has_api_key
+                    ? 'Une clé est déjà enregistrée. Saisissez-en une nouvelle pour la remplacer.'
+                    : 'Requise pour lancer les analyses IA sur les dossiers.'}
+                </p>
               </div>
               <div className="space-y-1">
                 <label className="block text-xs font-semibold text-slate-600">Seuil de confiance global par défaut</label>
@@ -282,9 +302,13 @@ export function Settings() {
                 ))}
               </div>
             </div>
-            <button onClick={handleSave} className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${saved ? 'bg-emerald-600 text-white' : 'bg-blue-600 text-white hover:bg-blue-700'}`}>
-              {saved ? <CheckCircle size={14} /> : <Save size={14} />}
-              {saved ? 'Enregistré !' : 'Enregistrer'}
+            <button
+              onClick={handleSaveApiKey}
+              disabled={!apiKey}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${apiKeySaved ? 'bg-emerald-600 text-white' : 'bg-blue-600 text-white hover:bg-blue-700'}`}
+            >
+              {apiKeySaved ? <CheckCircle size={14} /> : <Save size={14} />}
+              {apiKeySaved ? 'Clé enregistrée !' : 'Enregistrer la clé'}
             </button>
           </div>
         )}

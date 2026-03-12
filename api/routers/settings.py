@@ -1,8 +1,32 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends, Request
+from pydantic import BaseModel
 from api.models.organization import Organization, OrganizationUpdate
 from api.models.user import User, UserCreate, UserUpdate
+from api.auth import get_current_user
 
 router = APIRouter(prefix="/settings", tags=["Settings"])
+
+
+# ---- Profil utilisateur courant ----
+
+class ApiKeyPayload(BaseModel):
+    api_key: str
+
+@router.get("/me")
+async def get_me(current_user: User = Depends(get_current_user)):
+    return {
+        "id": str(current_user.id),
+        "nom": current_user.nom,
+        "prenom": current_user.prenom,
+        "email": current_user.email,
+        "role": current_user.role,
+        "has_api_key": bool(current_user.anthropic_api_key),
+    }
+
+@router.patch("/me/api-key", status_code=204)
+async def save_api_key(payload: ApiKeyPayload, current_user: User = Depends(get_current_user)):
+    current_user.anthropic_api_key = payload.api_key.strip() or None
+    await current_user.save()
 
 
 # ---- Organisation ----

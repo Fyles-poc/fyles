@@ -1,0 +1,17 @@
+# Fyles — Reverse proxy Caddy
+#
+# Accès par IP uniquement (pas de domaine), HTTP sur le port 80.
+# Si tu obtiens un vrai domaine plus tard, remplace ":80" par "ton-domaine.com"
+# et Caddy gérera le certificat HTTPS Let's Encrypt automatiquement.
+
+:80 {
+    # Toutes les requêtes /api/* → backend FastAPI
+    handle /api/* {
+        reverse_proxy api:8000
+    }
+
+    # Tout le reste → frontend Nginx
+    handle {
+        reverse_proxy frontend:80
+    }
+}
