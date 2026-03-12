@@ -158,7 +158,7 @@ export const mockDossiers: Dossier[] = [
     demandeur: { nom: 'Leroy', prenom: 'Emma', email: 'emma.leroy@email.fr' },
     type: 'Aide logement',
     workflowId: 'wf-2',
-    statut: 'signale',
+    statut: 'en_attente',
     confianceIA: 38,
     derniereMaj: '2026-02-24T09:05:00',
     instructeur: 'Leroy A.',

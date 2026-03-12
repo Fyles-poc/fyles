@@ -36,7 +36,8 @@
       "Bash(npx vite build)",
       "Bash(env/Scripts/python -m py_compile api/routers/workflow_execution.py)",
       "Bash(env/Scripts/python -c \":*)",
-      "Bash(\"C:/Users/viala/AppData/Local/pypoetry/Cache/virtualenvs/fyles-7mGUi_fS-py3.12/Scripts/pip\" install anthropic)"
+      "Bash(\"C:/Users/viala/AppData/Local/pypoetry/Cache/virtualenvs/fyles-7mGUi_fS-py3.12/Scripts/pip\" install anthropic)",
+      "Bash(npx tsc:*)"
     ]
   }
 }
