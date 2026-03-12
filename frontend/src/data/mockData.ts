@@ -7,7 +7,7 @@ export const mockDossiers: Dossier[] = [
     demandeur: { nom: 'Martin', prenom: 'Sophie', email: 'sophie.martin@email.fr' },
     type: 'Tarif préférentiel',
     workflowId: 'wf-1',
-    statut: 'en_cours',
+    statut: 'en_instruction',
     confianceIA: 67,
     derniereMaj: '2026-02-28T10:30:00',
     instructeur: 'Dupont M.',
