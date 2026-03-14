@@ -4,7 +4,6 @@ import {
   FolderOpen,
   GitBranch,
   Settings,
-  Zap,
   LogOut,
 } from 'lucide-react';
 import { clearAuth, getUser } from '../../lib/auth';
@@ -32,10 +31,8 @@ export function Sidebar() {
     <aside className="w-60 min-h-screen bg-slate-900 flex flex-col">
       {/* Logo */}
       <div className="flex items-center gap-2 px-5 py-5 border-b border-slate-700">
-        <div className="w-8 h-8 bg-blue-500 rounded-lg flex items-center justify-center">
-          <Zap size={16} className="text-white" />
-        </div>
-        <span className="text-white font-bold text-lg tracking-tight">Fyles</span>
+        <img src="/favicon.ico" alt="Fyles" className="w-8 h-8 object-contain" />
+        <span className="text-white font-bold text-lg tracking-tight">.Fyles</span>
       </div>
 
       {/* Nav */}
