@@ -4,6 +4,7 @@ import {
   PlusCircle, MinusCircle, Upload, Ban,
 } from 'lucide-react';
 import type { WorkflowNode, FormBlock } from '../lib/api';
+import { uuid } from '../lib/uuid';
 import type { LucideIcon } from 'lucide-react';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -914,7 +915,7 @@ export function InstructionWorkflowBuilder({
   const handleAddNode = (label: string, config: Record<string, unknown>) => {
     const nodeType = showAddModal === 'break' ? 'break' : 'analysis';
     const newNode: WorkflowNode = {
-      id: `node_${crypto.randomUUID()}`,
+      id: `node_${uuid()}`,
       type: nodeType,
       label,
       config,

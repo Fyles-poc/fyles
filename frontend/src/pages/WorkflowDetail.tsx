@@ -11,6 +11,7 @@ import {
 import { api } from '../lib/api';
 import type { WorkflowNode } from '../lib/api';
 import { useApi } from '../lib/useApi';
+import { uuid } from '../lib/uuid';
 import { LoadingSpinner, ErrorMessage } from '../components/ui/LoadingSpinner';
 import { InstructionWorkflowBuilder } from '../components/InstructionWorkflowBuilder';
 
@@ -989,7 +990,7 @@ function FormBuilder({
   const addBlock = (type: FieldType, containerId?: string) => {
     const isChoice = type === 'multiple_choice' || type === 'dropdown' || type === 'multiselect';
     const newBlock: FormBlock = {
-      id: `b${crypto.randomUUID()}`,
+      id: `b${uuid()}`,
       type,
       label: '',
       required: type !== 'header' && type !== 'text' && type !== 'container',
@@ -1004,7 +1005,7 @@ function FormBuilder({
 
   const addContainer = () => {
     const newContainer: FormBlock = {
-      id: `c${crypto.randomUUID()}`,
+      id: `c${uuid()}`,
       type: 'container',
       label: '',
       required: false,
@@ -1131,7 +1132,7 @@ export function WorkflowDetail() {
   const [menuAnchor, setMenuAnchor] = useState<{ top: number; left: number } | null>(null);
 
   const addPage = () => {
-    const newPage: FormPage = { id: `page_${crypto.randomUUID()}`, title: `Page ${demandePages.length + 1}`, blocks: [] };
+    const newPage: FormPage = { id: `page_${uuid()}`, title: `Page ${demandePages.length + 1}`, blocks: [] };
     setDemandePages((prev) => [...prev, newPage]);
     setActivePageIdx(demandePages.length);
   };
