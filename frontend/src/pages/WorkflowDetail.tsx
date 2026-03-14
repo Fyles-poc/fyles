@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, Plus, Trash2, ChevronDown, ChevronUp,
@@ -226,9 +227,9 @@ function AddFieldMenu({
         Ajouter un champ
       </button>
 
-      {showMenu && (
+      {showMenu && createPortal(
         <div
-          className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm flex items-center justify-center"
+          className="fixed inset-0 z-9999 bg-black/40 backdrop-blur-sm flex items-center justify-center"
           onClick={() => { setShowMenu(false); setSearch(''); }}
         >
           <div
@@ -304,7 +305,7 @@ function AddFieldMenu({
             </div>
           </div>
         </div>
-      )}
+      , document.body)}
     </>
   );
 }
