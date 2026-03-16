@@ -1048,7 +1048,7 @@ function FormBuilder({
     <div className="flex h-full">
       {/* Canvas (70%) */}
       <div className="flex-1 flex flex-col overflow-hidden" style={{ width: '70%' }}>
-        <div className="flex-1 overflow-y-auto p-5 space-y-3 bg-slate-50">
+        <div className="flex-1 overflow-y-auto p-5 pb-24 space-y-3 bg-slate-50">
           {blocks.length === 0 && (
             <div className="text-center py-16">
               <div className="w-12 h-12 bg-slate-100 rounded-xl flex items-center justify-center mx-auto mb-3">
