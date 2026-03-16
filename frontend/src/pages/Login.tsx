@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Zap } from 'lucide-react';
 import { setAuth } from '../lib/auth';
 
 function getApiBase(): string {
@@ -46,10 +45,8 @@ export function Login() {
       <div className="w-full max-w-sm">
         {/* Logo */}
         <div className="flex items-center gap-3 mb-8 justify-center">
-          <div className="w-10 h-10 bg-blue-500 rounded-xl flex items-center justify-center">
-            <Zap size={20} className="text-white" />
-          </div>
-          <span className="text-white font-bold text-2xl tracking-tight">Fyles</span>
+          <img src="/favicon.ico" alt="Fyles" className="w-10 h-10 object-contain" />
+          <span className="text-white font-bold text-2xl tracking-tight">.Fyles</span>
         </div>
 
         {/* Card */}
