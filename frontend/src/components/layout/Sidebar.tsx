@@ -28,7 +28,7 @@ export function Sidebar() {
   }
 
   return (
-    <aside className="w-60 min-h-screen bg-slate-900 flex flex-col">
+    <aside className="w-60 h-screen bg-slate-900 flex flex-col">
       {/* Logo */}
       <div className="flex items-center gap-2 px-5 py-5 border-b border-slate-700">
         <img src="/favicon.ico" alt="Fyles" className="w-8 h-8 object-contain" />
