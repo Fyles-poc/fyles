@@ -95,6 +95,14 @@ npm run dev --prefix frontend
 
 ---
 
+## Compte de test
+
+| Email | Mot de passe | Rôle |
+|-------|--------------|------|
+| marc.dupont@organisation.fr | 123456789 | Instructeur |
+
+---
+
 ## URLs
 
 | Service | URL |

@@ -22,6 +22,7 @@ from api.models.workflow import Workflow, WorkflowNode, AIConfig, FormPage, Form
 from api.models.user import User, UserRole
 from api.models.organization import Organization
 from api.storage import get_minio_client, ensure_bucket
+from api.auth import hash_password
 
 DATA_DIR = Path(__file__).parent.parent / "data"
 
@@ -539,7 +540,7 @@ async def seed():
     print("👤 Insertion des utilisateurs...")
     users = [
         User(nom="Dupont", prenom="Marc", email="marc.dupont@organisation.fr",
-             role=UserRole.instructeur, actif=True),
+             role=UserRole.instructeur, actif=True, hashed_password=hash_password("123456789")),
         User(nom="Leroy", prenom="Anne", email="anne.leroy@organisation.fr",
              role=UserRole.instructeur, actif=True),
         User(nom="Moreau", prenom="Claire", email="claire.moreau@organisation.fr",
